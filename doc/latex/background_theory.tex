@@ -1,0 +1,77 @@
+\documentclass[11pt, a4paper]{article}
+
+% \usepackage{empheq}
+\usepackage{amsmath} 
+\usepackage{titling}
+
+\begin{document}
+
+\title{Stepper motor control background theory} 
+\date{}
+\maketitle
+
+
+\section{Minimum Jerk Trajectory Generation}
+
+
+The boundary conditions are:
+
+\begin{center}
+    \begin{tabular}{ |c|c|c|c| }
+        \hline
+            & position & velocity & acceleration \\
+        \hline
+        t=0 & $x_0$ & $v_0$ & $a_0$ \\
+        \hline
+        t=T & $x_T$ & $v_T$ & $a_T$ \\
+        \hline
+    \end{tabular}
+    \label{tab:mjt_bc}
+\end{center}
+
+
+\begin{equation}
+    x(t) = c_5 * t^5 + c_4 * t^4 + c_3 * t^3 + c_2 * t^2 + c_1 * t + c_0
+    \label{eq:mjt_xt}
+\end{equation}
+
+\begin{equation}
+    \begin{bmatrix}
+        0 & 0 & 0 & 0 & 0 & 1 \\
+        T^5 & T^4 & T^3 & T^2 & T & 1 \\
+        0 & 0 & 0 & 0 & 1 & 0 \\
+        5T^4 & 4T^3 & 3T^2 & 2T & 1 & 0 \\
+        0 & 0 & 0 & 2 & 0 & 0 \\
+        20T^3 & 12T^2 & 6T & 2 & 0 & 0 \\    
+    \end{bmatrix}
+    \begin{bmatrix}
+        c_5 \\
+        c_4 \\
+        c_3 \\
+        c_2 \\
+        c_1 \\
+        c_0 \\
+    \end{bmatrix}
+    = 
+    \begin{bmatrix}
+        x_0 \\
+        x_T \\
+        v_0 \\
+        v_T \\
+        a_0 \\
+        a_T \\
+    \end{bmatrix}
+\end{equation}
+
+\begin{equation}
+    \left\{
+        \begin{alignedat}{3}
+            c_0 &= a_T \\
+            c_1 &= a_0 \\
+            c_2 &= \frac{v_T}{2} \\
+        \end{alignedat}
+    \right.
+\end{equation}
+
+
+\end{document}
