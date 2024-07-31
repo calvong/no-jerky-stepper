@@ -1,3 +1,3 @@
 version: "0.1.0"
-description: ""
+description: "A library for smooth stepper motor motion control using minimum jerk trajectory"
 url: "https://github.com/calvong/no-jerky-stepper.git"
