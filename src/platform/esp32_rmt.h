@@ -1,7 +1,7 @@
 #ifndef ESP32_RMT_H
 #define ESP32_RMT_H
 
-#ifndef __cplusplus
+#ifdef __cplusplus
 extern "C" {
 #endif
 
