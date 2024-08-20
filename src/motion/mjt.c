@@ -55,6 +55,8 @@ void gen_mjt_with_vmax_constraint(mjt_data_t* data)
 
     // shrink the dt_array to the actual number of points
     data->dt_array = (double*)realloc(data->dt_array, n * sizeof(double));
+
+
 }
 
 
@@ -78,8 +80,13 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     // calculate the mjt coefficients
     data->coeff = compute_mjt_coeff(data->bc);
 
-    // calculate the number of points of the trajectory
-    uint32_t n_allocated_pts = (uint32_t)(data->bc.T / data->unit_dt);
+    // calculate the number of points of the trajectory - start with a small buffer
+    uint32_t n_allocated_pts = (uint32_t)(data->bc.T / data->unit_dt)/10;
+
+    if (n_allocated_pts > 1000)
+    {
+        n_allocated_pts = 1000;
+    }
 
     // allocate memory for the dt_array
     data->dt_array = (double*)malloc(n_allocated_pts * sizeof(double));
@@ -95,14 +102,19 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     double udt4 = data->unit_dt * data->unit_dt * data->unit_dt * data->unit_dt;
     double udt5 = data->unit_dt * data->unit_dt * data->unit_dt * data->unit_dt * data->unit_dt;
 
-    for (uint32_t i = 0; i < n_allocated_pts; i++)
+    printf("allocated points: %ld\n", n_allocated_pts);
+
+    uint32_t i = 0;
+    while (1)
     {
+        double udt = (double) i * data->unit_dt;
+
         x = (double) data->coeff.c0 + 
-                     data->coeff.c1*i*data->unit_dt + 
-                     data->coeff.c2*i*i*udt2 + 
-                     data->coeff.c3*i*i*i*udt3 + 
-                     data->coeff.c4*i*i*i*i*udt4 + 
-                     data->coeff.c5*i*i*i*i*i*udt5;
+                     data->coeff.c1*data->unit_dt + 
+                     data->coeff.c2*udt*udt + 
+                     data->coeff.c3*udt*udt*udt + 
+                     data->coeff.c4*udt*udt*udt*udt + 
+                     data->coeff.c5*udt*udt*udt*udt*udt;
 
         if (x - x_stepped >= data->dx)
         {
@@ -111,11 +123,21 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
             n++;
             x_stepped += data->dx;        
         }
-    }
 
-    // compute the final step
-    data->dt_array[n] = (double)(n_allocated_pts + 1 - prev_i) * data->unit_dt;
-    n++;
+        // check if the trajectory is complete
+        if (x_stepped >= data->bc.xT)
+        {
+            break;
+        }
+
+        i++;
+
+        if (i >= n_allocated_pts)
+        {
+            n_allocated_pts *= 2;
+            data->dt_array = (double*)realloc(data->dt_array, n_allocated_pts * sizeof(double));
+        }
+    }
 
     data->n = n;
 
