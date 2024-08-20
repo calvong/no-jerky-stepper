@@ -42,7 +42,7 @@ def mjt_symbolic_coefficients():
 def plot_unit_mjt_profiles():
     """Plot minimum jerk trajectory unit profiles."""
     x0 = 0
-    xT = 1
+    xT = 10
     v0 = 0
     vT = 0
     a0 = 0
@@ -121,7 +121,7 @@ def max_velocity_to_trajectory_duration_equations():
 
     # print the mapping functions
     print('Mapping function for T to Vmax: Vmax = a * T^-1')
-    print(f'Mapping function for xT to a: a = {np.round(f2_params[0], 2)} * xT + {np.round(f2_params[1], 2)}')
+    print(f'Mapping function for xT to a: a = {np.round(f2_params[0], 4)} * xT + {np.round(f2_params[1], 4)}')
 
     # plot Vmax vs T and a vs xT in subplots
     plt.figure()
