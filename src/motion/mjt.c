@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
+#include "mjt_timestep_lut.h"
 #include "mjt.h"
 
 
@@ -85,6 +87,7 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
 
     if (n_allocated_pts > 1000)
     {
+        // making sure that the buffer is not too large to start with
         n_allocated_pts = 1000;
     }
 
@@ -93,49 +96,30 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
 
     // generate the mjt trajectory
     double x = 0;
+    double two_dx = 2 * data->dx;
     uint32_t n = 0;
     uint32_t prev_i = 0;
     double x_stepped = 0;   // x_stepped is the distance covered by the trajectory
-
-    double udt2 = data->unit_dt * data->unit_dt;
-    double udt3 = data->unit_dt * data->unit_dt * data->unit_dt;
-    double udt4 = data->unit_dt * data->unit_dt * data->unit_dt * data->unit_dt;
-    double udt5 = data->unit_dt * data->unit_dt * data->unit_dt * data->unit_dt * data->unit_dt;
-
+    double tt = 0;  // total time in increments of unit_dt
     printf("allocated points: %ld\n", n_allocated_pts);
 
     uint32_t i = 0;
     while (1)
     {
-        double udt = (double) i * data->unit_dt;
+        double ts = multi_stage_binary_mjt_timestep_search(data, &x_stepped, &tt);
 
-        x = (double) data->coeff.c0 + 
-                     data->coeff.c1*data->unit_dt + 
-                     data->coeff.c2*udt*udt + 
-                     data->coeff.c3*udt*udt*udt + 
-                     data->coeff.c4*udt*udt*udt*udt + 
-                     data->coeff.c5*udt*udt*udt*udt*udt;
+        data->dt_array[n] = ts;
 
-        if (x - x_stepped >= data->dx)
-        {
-            data->dt_array[n] = (double)(i - prev_i) * data->unit_dt;
-            prev_i = i;
-            n++;
-            x_stepped += data->dx;        
-        }
-
-        // check if the trajectory is complete
-        if (x_stepped >= data->bc.xT)
-        {
-            break;
-        }
-
-        i++;
-
-        if (i >= n_allocated_pts)
+        n++;
+        if (n >= n_allocated_pts)
         {
             n_allocated_pts *= 2;
             data->dt_array = (double*)realloc(data->dt_array, n_allocated_pts * sizeof(double));
+        }
+
+        if (x_stepped >= data->bc.xT)
+        {
+            break;
         }
     }
 
@@ -144,6 +128,176 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     // shrink the dt_array to the actual number of points
     data->dt_array = (double*)realloc(data->dt_array, n * sizeof(double));
 }
+
+
+double multi_stage_binary_mjt_timestep_search(mjt_data_t* data, double* x_stepped, double* tt)
+{
+    const double* ts_lut = NULL;
+    double final_ts = 0;
+    uint8_t starting_stage = 0;
+
+    // check stage 0 to determine the starting search stage
+    double x = 0;
+    for (uint8_t i=0; i < TS_LUT_LEVEL0_SIZE; i++)
+    {
+        // calculate current position
+        double ts = ts_lut_level0[i];
+
+        x = (double) data->coeff.c0 + 
+                        data->coeff.c1*(*tt+ts) + 
+                        data->coeff.c2*(*tt+ts)*(*tt+ts) + 
+                        data->coeff.c3*(*tt+ts)*(*tt+ts)*(*tt+ts) + 
+                        data->coeff.c4*(*tt+ts)*(*tt+ts)*(*tt+ts)*(*tt+ts) + 
+                        data->coeff.c5*(*tt+ts)*(*tt+ts)*(*tt+ts)*(*tt+ts)*(*tt+ts);
+
+        printf("stage=0, idx=%d, x=%f, x_stepped=%f, ts=%f, tt=%f\n", i, x, *x_stepped, ts, *tt);
+
+        if (x - *x_stepped >= data->dx)
+        {
+            if (i == 0)
+            {
+                // this should not be possible
+                printf("multi stage binary search failed: need to start with ts=2e-6, bad step size selection?\n");
+            }
+            else
+            {
+                starting_stage = 6 - i + 1;
+                break;
+            }
+        }
+    }
+
+    if (starting_stage == 0)
+    {
+        // this should not be possible as well :(
+        printf("multi stage binary search failed: no suitable timestep found\n");
+    }
+    else
+    {
+        for (uint8_t stage = starting_stage; stage <= 6; stage++)
+        {
+            switch (stage)
+            {
+                case 1:
+                    ts_lut = ts_lut_level1;
+                    break;
+                case 2:
+                    ts_lut = ts_lut_level2;
+                    break;
+                case 3:
+                    ts_lut = ts_lut_level3;
+                    break;
+                case 4:
+                    ts_lut = ts_lut_level4;
+                    break;
+                case 5:
+                    ts_lut = ts_lut_level5;
+                    break;
+                case 6:
+                    ts_lut = ts_lut_level6;
+                    break;
+                default:
+                    printf("multi stage binary search not possible to be here 1\n");    // invalid stage
+            }
+
+            uint8_t idx = binary_mjt_timestep_index_search(stage, data, *x_stepped, *tt);
+
+            if (idx == 255)
+            {
+                printf("binary mjt timestep index search failed\n");
+            }
+            else
+            {
+                final_ts += ts_lut[idx];
+                *tt += ts_lut[idx];
+            }
+
+            printf("stage=%d, idx=%d, x_stepped=%f, tt=%f\n", stage, idx, *x_stepped, *tt);
+
+        }
+
+        *x_stepped += data->dx;
+
+        printf("updated x_stepped=%f and final ts=%f\n", *x_stepped, final_ts);
+    }
+
+    return final_ts;
+}
+
+
+uint8_t binary_mjt_timestep_index_search(uint8_t stage, mjt_data_t* data, double x_stepped, double tt)
+{
+    double x = 0;
+    double two_dx = 2 * data->dx;
+
+    int low = 0;
+    int high = 0;
+    int mid = 0;
+    const double* timestep_lut = NULL;
+    switch (stage)
+    {
+        case 1:
+            high = TS_LUT_LEVEL1_SIZE - 1;
+            timestep_lut = ts_lut_level1;
+            break;
+        case 2:
+            high = TS_LUT_LEVEL2_SIZE - 1;
+            timestep_lut = ts_lut_level2;
+            break;
+        case 3:
+            high = TS_LUT_LEVEL3_SIZE - 1;
+            timestep_lut = ts_lut_level3;
+            break;
+        case 4:
+            high = TS_LUT_LEVEL4_SIZE - 1;
+            timestep_lut = ts_lut_level4;
+            break;
+        case 5:
+            high = TS_LUT_LEVEL5_SIZE - 1;
+            timestep_lut = ts_lut_level5;
+            break;
+        case 6:
+            high = TS_LUT_LEVEL6_SIZE - 1;
+            timestep_lut = ts_lut_level6;
+            break;
+        default:
+            return 254;    // invalid stage
+    }
+
+    while (low <= high)
+    {
+        // calculate current position
+        mid = (int) low + (high - low) / 2;
+        double ts = timestep_lut[mid];
+
+        x = (double) data->coeff.c0 + 
+                        data->coeff.c1*(tt+ts) + 
+                        data->coeff.c2*(tt+ts)*(tt+ts) + 
+                        data->coeff.c3*(tt+ts)*(tt+ts)*(tt+ts) + 
+                        data->coeff.c4*(tt+ts)*(tt+ts)*(tt+ts)*(tt+ts) + 
+                        data->coeff.c5*(tt+ts)*(tt+ts)*(tt+ts)*(tt+ts)*(tt+ts);
+
+        printf("low=%d, high=%d, mid=%d, ts=%f, x=%f, x_stepped=%f, dx=%f\n", low, high, mid, ts, x, x_stepped, data->dx);
+        if ((x - x_stepped >= data->dx) && (x - x_stepped <= two_dx))
+        // if (x - x_stepped >= data->dx)
+        {
+            return mid;
+        }
+        else if (x - x_stepped < data->dx)
+        {
+            printf("x < x_stepped, update low\n");
+            low = mid + 1;
+        }
+        else
+        {
+            printf("x > x_stepped, update high\n");
+            high = mid - 1;
+        }
+    }
+
+    return mid; 
+}
+
 
 
 /**
@@ -209,3 +363,4 @@ mjt_data_t init_mjt_data()
 
     return output;
 }
+
