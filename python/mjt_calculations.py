@@ -139,7 +139,11 @@ def max_velocity_to_trajectory_duration_equations():
     plt.tight_layout()
 
 
-def gen_timestep_array():
+def gen_timestep_array_headers():
+    start_ts = 2e-6
+    end_ts = 0.4
+    dt = 2e-6
+
     ts_lut_level0 = [2e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]
     ts_lut_level1 = np.arange(1e-1, 1, 1e-1)
     ts_lut_level2 = np.arange(1e-2, 1e-1, 1e-2)
@@ -149,9 +153,9 @@ def gen_timestep_array():
     ts_lut_level6 = np.arange(2e-6, 1e-5, 2e-6)
 
     # write to a header file
-    with open('mjt_timestep_lut.h', 'w') as f:
-        f.write('#ifndef MJT_TIMESTEP_LUT_H\n')
-        f.write('#define MJT_TIMESTEP_LUT_H\n\n')
+    with open('generated_headers/mjt_mutli_level_timestep_lut.h', 'w') as f:
+        f.write('#ifndef MJT_MULTI_LEVEL_TIMESTEP_LUT_H\n')
+        f.write('#define MJT_MULTI_LEVEL_TIMESTEP_LUT_H\n\n')
         f.write(f'#define TS_LUT_LEVEL0_SIZE {len(ts_lut_level0)}\n')
         f.write(f'#define TS_LUT_LEVEL1_SIZE {len(ts_lut_level1)}\n')
         f.write(f'#define TS_LUT_LEVEL2_SIZE {len(ts_lut_level2)}\n')
@@ -182,10 +186,22 @@ def gen_timestep_array():
         f.write('};\n\n')
         f.write('#endif')
 
+    ts_lut = np.arange(start_ts, end_ts, dt)
+
+    # write to a header file
+    with open('generated_headers/mjt_timestep_lut.h', 'w') as f:
+        f.write('#ifndef MJT_TIMESTEP_LUT_H\n')
+        f.write('#define MJT_TIMESTEP_LUT_H\n\n')
+        f.write(f'#define TS_LUT_SIZE {len(ts_lut)}\n\n')
+        f.write('const double mjt_ts_lut[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut]))
+        f.write('};\n\n')
+        f.write('#endif')
+
 
 if __name__ == '__main__':
     # mjt_symbolic_coefficients()
     # plot_unit_mjt_profiles()
     # max_velocity_to_trajectory_duration_equations()
-    gen_timestep_array()
+    gen_timestep_array_headers()
     plt.show()
