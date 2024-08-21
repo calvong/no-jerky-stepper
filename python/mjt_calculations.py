@@ -139,8 +139,53 @@ def max_velocity_to_trajectory_duration_equations():
     plt.tight_layout()
 
 
+def gen_timestep_array():
+    ts_lut_level0 = [2e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]
+    ts_lut_level1 = np.arange(1e-1, 1, 1e-1)
+    ts_lut_level2 = np.arange(1e-2, 1e-1, 1e-2)
+    ts_lut_level3 = np.arange(1e-3, 1e-2, 1e-3)
+    ts_lut_level4 = np.arange(1e-4, 1e-3, 1e-4)
+    ts_lut_level5 = np.arange(1e-5, 1e-4, 1e-5)
+    ts_lut_level6 = np.arange(2e-6, 1e-5, 2e-6)
+
+    # write to a header file
+    with open('mjt_timestep_lut.h', 'w') as f:
+        f.write('#ifndef MJT_TIMESTEP_LUT_H\n')
+        f.write('#define MJT_TIMESTEP_LUT_H\n\n')
+        f.write(f'#define TS_LUT_LEVEL0_SIZE {len(ts_lut_level0)}\n')
+        f.write(f'#define TS_LUT_LEVEL1_SIZE {len(ts_lut_level1)}\n')
+        f.write(f'#define TS_LUT_LEVEL2_SIZE {len(ts_lut_level2)}\n')
+        f.write(f'#define TS_LUT_LEVEL3_SIZE {len(ts_lut_level3)}\n')
+        f.write(f'#define TS_LUT_LEVEL4_SIZE {len(ts_lut_level4)}\n')
+        f.write(f'#define TS_LUT_LEVEL5_SIZE {len(ts_lut_level5)}\n')
+        f.write(f'#define TS_LUT_LEVEL6_SIZE {len(ts_lut_level6)}\n\n')
+        f.write('const double ts_lut_level0[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level0]))
+        f.write('};\n')
+        f.write('const double ts_lut_level1[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level1]))
+        f.write('};\n')
+        f.write('const double ts_lut_level2[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level2]))
+        f.write('};\n')
+        f.write('const double ts_lut_level3[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level3]))
+        f.write('};\n')
+        f.write('const double ts_lut_level4[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level4]))
+        f.write('};\n')
+        f.write('const double ts_lut_level5[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level5]))
+        f.write('};\n')
+        f.write('const double ts_lut_level6[] = {')
+        f.write(','.join([str(round(i, 8)) for i in ts_lut_level6]))
+        f.write('};\n\n')
+        f.write('#endif')
+
+
 if __name__ == '__main__':
-    mjt_symbolic_coefficients()
-    plot_unit_mjt_profiles()
-    max_velocity_to_trajectory_duration_equations()
+    # mjt_symbolic_coefficients()
+    # plot_unit_mjt_profiles()
+    # max_velocity_to_trajectory_duration_equations()
+    gen_timestep_array()
     plt.show()
