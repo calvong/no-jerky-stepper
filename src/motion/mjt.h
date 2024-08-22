@@ -38,7 +38,6 @@ typedef struct mjt_data
     uint32_t vmax; // [m/s or deg/s] maximum velocity <- this is more intiuitive than acceleration limit
 
     double dx;          // [m or deg] step size
-    double unit_dt;     // [s] smallest time step unit
 
     // generated data
     double* dt_array;   // [s] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)

@@ -156,6 +156,7 @@ def gen_timestep_array_headers():
     with open('generated_headers/mjt_mutli_level_timestep_lut.h', 'w') as f:
         f.write('#ifndef MJT_MULTI_LEVEL_TIMESTEP_LUT_H\n')
         f.write('#define MJT_MULTI_LEVEL_TIMESTEP_LUT_H\n\n')
+        f.write(f'#define UNIT_TS 2e-6\n')
         f.write(f'#define TS_LUT_LEVEL0_SIZE {len(ts_lut_level0)}\n')
         f.write(f'#define TS_LUT_LEVEL1_SIZE {len(ts_lut_level1)}\n')
         f.write(f'#define TS_LUT_LEVEL2_SIZE {len(ts_lut_level2)}\n')
