@@ -35,7 +35,7 @@ void gen_mjt_with_vmax_constraint(mjt_data_t* data)
     data->coeff = compute_mjt_coeff(data->bc);
 
     // calculate the number of points of the trajectory
-    uint32_t n_allocated_pts = (uint32_t)(data->bc.T / data->unit_dt);
+    uint32_t n_allocated_pts = (uint32_t)(data->bc.T / MJT_UNIT_TS);
 
     if (n_allocated_pts > 1000)
     {
@@ -69,7 +69,7 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     data->coeff = compute_mjt_coeff(data->bc);
 
     // calculate the number of points of the trajectory - start with a small buffer
-    uint32_t n_allocated_pts = (uint32_t)(data->bc.T / data->unit_dt)/10;
+    uint32_t n_allocated_pts = (uint32_t)(data->bc.T / MJT_UNIT_TS)/10;
 
     if (n_allocated_pts > 1000)
     {
@@ -333,7 +333,6 @@ mjt_data_t init_mjt_data()
     mjt_data_t output = {
     .vmax = 9999999,
     .dx = 999,
-    .unit_dt = 0.00999,
     .dt_array = NULL,
     .n = 0,
     .bc = (mjt_bc_t){

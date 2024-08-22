@@ -1,7 +1,7 @@
 #ifndef NO_JERKY_STEPPER_H
 #define NO_JERKY_STEPPER_H
 
-#include "platform.h"
+#include "no_jerky_platform.h"
 
 
 #endif
