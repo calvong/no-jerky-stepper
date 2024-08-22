@@ -113,7 +113,7 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
 }
 
 
-double multi_stage_binary_mjt_timestep_search(mjt_data_t* data, double* x_stepped, double* tt)
+static double multi_stage_binary_mjt_timestep_search(mjt_data_t* data, double* x_stepped, double* tt)
 {
     const double* ts_lut = NULL;
     double final_ts = 0;
@@ -209,7 +209,7 @@ double multi_stage_binary_mjt_timestep_search(mjt_data_t* data, double* x_steppe
 }
 
 
-uint8_t binary_mjt_timestep_index_search(uint8_t stage, mjt_data_t* data, double x_stepped, double tt)
+static uint8_t binary_mjt_timestep_index_search(uint8_t stage, mjt_data_t* data, double x_stepped, double tt)
 {
     double x = 0;
     double two_dx = 2 * data->dx;

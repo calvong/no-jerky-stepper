@@ -54,8 +54,8 @@ mjt_data_t init_mjt_data();
 
 // helper functions - private
 mjt_coeff_t compute_mjt_coeff(mjt_bc_t bc);
-double multi_stage_binary_mjt_timestep_search(mjt_data_t* data, double* x_stepped, double* tt);
-uint8_t binary_mjt_timestep_index_search(uint8_t stage, mjt_data_t* data, double x_stepped, double tt);
+static double multi_stage_binary_mjt_timestep_search(mjt_data_t* data, double* x_stepped, double* tt);
+static uint8_t binary_mjt_timestep_index_search(uint8_t stage, mjt_data_t* data, double x_stepped, double tt);
 
 
 #ifdef __cplusplus
