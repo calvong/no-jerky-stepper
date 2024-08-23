@@ -40,7 +40,7 @@ typedef struct mjt_data
     double dx;          // [m or deg] step size
 
     // generated data
-    double* dt_array;   // [s] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)
+    uint32_t* dt_array;   // [us] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)
     uint32_t n;         // number of points of the trajectory
     mjt_bc_t bc;        // boundary conditions
     mjt_coeff_t coeff;  // mjt coefficients

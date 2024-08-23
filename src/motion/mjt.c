@@ -16,7 +16,7 @@
  *                    - unit_dt [s] smallest time step unit   
  * 
  *                 output data:
- *                    - dt_array [s] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)
+ *                    - dt_array [us] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)
  *                    - n number of points of the trajectory
  *                    - bc boundary conditions
  *                    - coeff mjt coefficients  [can be an input as well for non default boundary conditions]
@@ -44,7 +44,7 @@ void gen_mjt_with_vmax_constraint(mjt_data_t* data)
     }
 
     // allocate memory for the dt_array
-    data->dt_array = (double*)malloc(n_allocated_pts * sizeof(double));
+    data->dt_array = (uint32_t*)malloc(n_allocated_pts * sizeof(uint32_t));
 }
 
 
@@ -59,7 +59,7 @@ void gen_mjt_with_vmax_constraint(mjt_data_t* data)
  *                   - bc.T [s] trajectory duration
  * 
  *                 output data:
- *                   - dt_array [s] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)
+ *                   - dt_array [us] mjt trajectory represented by varying time steps (one variable time step for each unit step distance)
  *                   - n number of points of the trajectory
  *                   - coeff mjt coefficients  
  */
@@ -78,7 +78,7 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     }
 
     // allocate memory for the dt_array
-    data->dt_array = (double*)malloc(n_allocated_pts * sizeof(double));
+    data->dt_array = (uint32_t*)malloc(n_allocated_pts * sizeof(uint32_t));
 
     // generate the mjt trajectory
     double x = 0;
@@ -91,13 +91,13 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     {
         double ts = multi_stage_binary_mjt_timestep_search(data, &x_stepped, &tt);
 
-        data->dt_array[n] = ts;
+        data->dt_array[n] = round(ts * 1000000.0);   // convert to us
 
         n++;
         if (n >= n_allocated_pts)
         {
             n_allocated_pts *= 2;
-            data->dt_array = (double*)realloc(data->dt_array, n_allocated_pts * sizeof(double));
+            data->dt_array = (uint32_t*)realloc(data->dt_array, n_allocated_pts * sizeof(uint32_t));
         }
 
         if (x_stepped >= data->bc.xT)
@@ -109,7 +109,7 @@ void gen_mjt_with_time_constraint(mjt_data_t* data)
     data->n = n;
 
     // shrink the dt_array to the actual number of points
-    data->dt_array = (double*)realloc(data->dt_array, n * sizeof(double));
+    data->dt_array = (uint32_t*)realloc(data->dt_array, n * sizeof(uint32_t));
 }
 
 
