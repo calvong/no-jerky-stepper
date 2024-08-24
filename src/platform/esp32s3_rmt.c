@@ -53,6 +53,7 @@ esp32s3_rmt_t esp32s3_rmt_init(uint8_t n_motors, uint8_t step_pins[])
     // register RMT callback
     for (uint8_t i = 0; i < n_motors; i++)
     {
+        // FIXME: this is not working
         // ESP_ERROR_CHECK(rmt_tx_register_event_callbacks(rmt_data.rmt_channels[i], esp32s3_rmt_tx_done_callback, NULL));
     }
 
@@ -169,6 +170,15 @@ esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *enco
     step_encoder->curve = (rmt_symbol_word_t*) realloc(step_encoder->curve, curve_size * sizeof(rmt_symbol_word_t));
     
     return ret;
+}
+
+
+void esp32s3_rmt_wait_for_all_tx_done(esp32s3_rmt_t esp32s3_rmt, uint8_t n_channels)
+{
+    for (uint8_t i = 0; i < n_channels; i++)
+    {
+        rmt_tx_wait_all_done(esp32s3_rmt.rmt_channels[i], -1);
+    }
 }
 
 

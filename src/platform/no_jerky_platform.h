@@ -37,6 +37,7 @@ typedef struct no_jerky_platform_data
 no_jerky_platform_data_t no_jerky_platform_init(no_jerky_motor_pins_t motor_pins[]);
 
 void send_not_jerky_stepper_motor_curve(no_jerky_platform_data_t platform_data, uint32_t *curve, uint32_t curve_size, uint8_t motor_id);
+void wait_for_motor_motion_done(no_jerky_platform_data_t platform_data);
 void no_jerky_delay_ms(uint16_t ms);
 
 

@@ -26,6 +26,7 @@ typedef struct esp32s3_rmt_encoder_data {
 esp32s3_rmt_t esp32s3_rmt_init(uint8_t n_motors, uint8_t step_pins[]);
 esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *encoder_data);
 void esp32s3_rmt_channels_sync_reset(esp32s3_rmt_t esp32s3_rmt);
+void esp32s3_rmt_wait_for_all_tx_done(esp32s3_rmt_t esp32s3_rmt, uint8_t n_channels);
 
 // static functions
 static size_t esp32s3_rmt_encode_stepper_curve(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state);
