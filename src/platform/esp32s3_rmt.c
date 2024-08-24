@@ -8,7 +8,7 @@ typedef struct esp32s3_rmt_curve_encoder {
     rmt_encoder_t base;
     rmt_encoder_handle_t copy_encoder;
     uint32_t data_size;
-    rmt_symbol_word_t curve[];
+    rmt_symbol_word_t* curve;
 } esp32s3_rmt_curve_encoder_t;
 
 
@@ -87,19 +87,74 @@ esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *enco
         return ESP_FAIL;
     }
 
-    // convert user data into RMT symbol format
+    // --- convert user data into RMT symbol format ---
+    // allocate memory for the curve, start with the input data size
+    uint32_t allocated_curve_memory = encoder_data->data_size;
+    step_encoder->curve = (rmt_symbol_word_t*) malloc(allocated_curve_memory * sizeof(rmt_symbol_word_t));
+
+    uint32_t curve_size = 0;
     for (uint32_t i = 0; i < encoder_data->data_size; i++)
     {
-        if (i==0)
+        // check if need to reallocate memory for the curve
+        increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, step_encoder->curve);
+
+        // check if the duration exceeds 0x8000 (2^15 not uint16_t!!)
+        uint8_t n_shifts = 1;
+        if (encoder_data->data[i] > 0x8000)
         {
-            printf("Data: %ld, half: %ld\n", encoder_data->data[i], encoder_data->data[i] /2);
+
+            uint32_t big_symbol = 0;
+            // maximum divide by 2^10 = 1024
+            for (uint8_t k = 1; k < 10; k++)
+            {
+                big_symbol = encoder_data->data[i] >> (k + 1);
+
+                if (big_symbol <= 0x8000)
+                {
+                    n_shifts = k;
+                    break;
+                }
+            }
+            // split the duration into multiple symbols
+            uint16_t symbol_duration = (uint16_t) big_symbol;
+            printf("big symbol: %ld, duration=%d, OG=%ld, nshifts=%d, i=%ld, curve_idx=%ld\n", big_symbol,symbol_duration, encoder_data->data[i], n_shifts, i, curve_size);
+
+            for (uint8_t j = 0; j < 1 << (n_shifts - 1); j++)
+            {   
+                increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, step_encoder->curve);
+
+                step_encoder->curve[curve_size].level0 = 1;
+                step_encoder->curve[curve_size].duration0 = symbol_duration;
+                step_encoder->curve[curve_size].level1 = 1;
+                step_encoder->curve[curve_size].duration1 = symbol_duration;
+         
+                curve_size++;
+            }
+            for (uint8_t j = 0; j < 1 << (n_shifts - 1); j++)
+            {
+                increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, step_encoder->curve);
+
+                step_encoder->curve[curve_size].level0 = 0;
+                step_encoder->curve[curve_size].duration0 = symbol_duration;
+                step_encoder->curve[curve_size].level1 = 0;
+                step_encoder->curve[curve_size].duration1 = symbol_duration;
+
+                curve_size++;
+            }
         }
-        uint16_t symbol_duration = (uint16_t) encoder_data->data[i] / 2; // divide timestep by 2 to create one step pulse
-        // FIXME: for duration that exceeds 0xFFFF, split the duration into multiple symbols
-        step_encoder->curve[i].level0 = 0;
-        step_encoder->curve[i].duration0 = symbol_duration;
-        step_encoder->curve[i].level1 = 1;
-        step_encoder->curve[i].duration1 = symbol_duration;
+        else
+        {
+            increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, step_encoder->curve);
+
+            uint16_t symbol_duration = (uint16_t) encoder_data->data[i] >> 1; // divide timestep by 2 to create one step pulse
+            // FIXME: for duration that exceeds 0xFFFF, split the duration into multiple symbols
+            step_encoder->curve[curve_size].level0 = 1;
+            step_encoder->curve[curve_size].duration0 = symbol_duration;
+            step_encoder->curve[curve_size].level1 = 0;
+            step_encoder->curve[curve_size].duration1 = symbol_duration;
+
+            curve_size++;
+        }
     }
 
     // set the RMT encoder data
@@ -108,8 +163,11 @@ esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *enco
     step_encoder->base.encode = esp32s3_rmt_encode_stepper_curve;
 
     encoder_data->rmt_encoder = &(step_encoder->base);
-    step_encoder->data_size = encoder_data->data_size;
-
+    step_encoder->data_size = curve_size;
+    
+    // shrink the curve memory to the actual size
+    step_encoder->curve = (rmt_symbol_word_t*) realloc(step_encoder->curve, curve_size * sizeof(rmt_symbol_word_t));
+    
     return ret;
 }
 
@@ -128,7 +186,10 @@ static size_t esp32s3_rmt_encode_stepper_curve(rmt_encoder_t *encoder, rmt_chann
     rmt_encode_state_t session_state = RMT_ENCODING_RESET;
     size_t encoded_symbols = 0;
 
-    printf("curve %d, data size %ld\n", stepper_encoder->curve[0].duration0, stepper_encoder->data_size);
+    for (uint8_t i = 0; i < 20; i++)
+    {    
+        printf("curve %d, data size %ld, i=%d\n", stepper_encoder->curve[i].duration0, stepper_encoder->data_size, i);
+    }
     encoded_symbols = copy_encoder->encode(copy_encoder,
                                            channel,
                                            stepper_encoder->curve,
@@ -145,6 +206,7 @@ static esp_err_t esp32s3_rmt_del_stepper_curve_encoder(rmt_encoder_t *encoder)
 {
     esp32s3_rmt_curve_encoder_t *stepper_encoder = __containerof(encoder, esp32s3_rmt_curve_encoder_t, base);
     rmt_del_encoder(stepper_encoder->copy_encoder);
+    free(stepper_encoder->curve);
     free(stepper_encoder);
     return ESP_OK;
 }
@@ -163,4 +225,15 @@ static void esp32s3_rmt_tx_done_callback(rmt_channel_handle_t channel, const rmt
     // TODO
 
     printf("RMT channel transmission done naniiii\n");
+}
+
+
+static void increase_allocated_curve_memory_check(uint32_t current_size, uint32_t* current_max_size, rmt_symbol_word_t *curve)
+{
+    if (current_size >= *current_max_size)
+    {
+        curve = (rmt_symbol_word_t*) realloc(curve, 2 * (*current_max_size) * sizeof(rmt_symbol_word_t));
+
+        *current_max_size = 2 * (*current_max_size);
+    }
 }

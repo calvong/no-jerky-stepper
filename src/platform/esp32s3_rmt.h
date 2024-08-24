@@ -32,6 +32,7 @@ static size_t esp32s3_rmt_encode_stepper_curve(rmt_encoder_t *encoder, rmt_chann
 static esp_err_t esp32s3_rmt_del_stepper_curve_encoder(rmt_encoder_t *encoder);
 static esp_err_t esp32s3_rmt_reset_stepper_curve_encoder(rmt_encoder_t *encoder);
 static void esp32s3_rmt_tx_done_callback(rmt_channel_handle_t channel, const rmt_tx_done_event_data_t *edata, void *user_data);
+static void increase_allocated_curve_memory_check(uint32_t current_size, uint32_t* current_max_size, rmt_symbol_word_t *curve);
 
 #ifdef __cplusplus
 }
