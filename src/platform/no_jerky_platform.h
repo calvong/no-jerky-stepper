@@ -15,29 +15,23 @@ extern "C" {
 
 typedef struct no_jerky_motor_pins
 {
-    uint8_t dir_pin;
-    uint8_t step_pin;
-    // enable motors at the higher level
+    uint8_t dir;
+    uint8_t step;
+    uint8_t enable;
 } no_jerky_motor_pins_t;
 
 
-typedef struct no_jerky_platform_data
+typedef struct no_jerky_output
 {
-    // allows multi-channel/multi-motor control
-    // generic platform data
-    no_jerky_motor_pins_t* motor_pins;
-    uint8_t n_motors;
-
-    // platform specific data
-    esp32s3_rmt_t esp32s3_rmt;
-
-} no_jerky_platform_data_t;
+    // platform specific PWM/motor output peripheral
+    rmt_channel_handle_t rmt_channel;
+} no_jerky_output_t;
 
 
-no_jerky_platform_data_t no_jerky_platform_init(no_jerky_motor_pins_t motor_pins[]);
+no_jerky_output_t no_jerky_init(no_jerky_motor_pins_t motor_pins);
+void output_not_jerky_motion_curve(no_jerky_output_t output_ch, uint32_t *curve, uint32_t curve_size);
+void wait_for_motor_motion_done(no_jerky_output_t output_ch);
 
-void send_not_jerky_stepper_motor_curve(no_jerky_platform_data_t platform_data, uint32_t *curve, uint32_t curve_size, uint8_t motor_id);
-void wait_for_motor_motion_done(no_jerky_platform_data_t platform_data);
 void no_jerky_delay_ms(uint16_t ms);
 
 

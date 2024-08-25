@@ -8,71 +8,63 @@
 #include "esp_check.h"
 
 
-no_jerky_platform_data_t no_jerky_platform_init(no_jerky_motor_pins_t motor_pins[])
+no_jerky_output_t no_jerky_init(no_jerky_motor_pins_t motor_pins)
 {
-    no_jerky_platform_data_t platform_data;
-
-    // check number of motors/channels
-    uint8_t n_motors = sizeof(motor_pins) / sizeof(motor_pins[0]);
-    platform_data.n_motors = n_motors;
+    no_jerky_output_t output_ch;
 
     // configure motor pins
-    for (uint8_t i = 0; i < n_motors; i++)
-    {
-        // Cannot image number of motors being more than 255!?
-        gpio_set_direction((gpio_num_t) motor_pins[i].dir_pin, GPIO_MODE_OUTPUT);
-        gpio_set_direction((gpio_num_t) motor_pins[i].step_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction((gpio_num_t) motor_pins.dir, GPIO_MODE_OUTPUT);
+    gpio_set_direction((gpio_num_t) motor_pins.step, GPIO_MODE_OUTPUT);
 
-        gpio_set_level((gpio_num_t) motor_pins[i].dir_pin, 1);
-    }
-
-    platform_data.motor_pins = &motor_pins[0];
+    gpio_set_level((gpio_num_t) motor_pins.dir, 1);
 
     // configure ESP32-S3 RMT channels
-    uint8_t step_pins[n_motors];
-    for (uint8_t i = 0; i < n_motors; i++)
-    {
-        step_pins[i] = motor_pins[i].step_pin;
-    }
-    
-    platform_data.esp32s3_rmt = esp32s3_rmt_init(n_motors, step_pins);
+    output_ch.rmt_channel = esp32s3_rmt_init(motor_pins.step);
 
-    return platform_data;
+    return output_ch;
 }
 
 
-void send_not_jerky_stepper_motor_curve(no_jerky_platform_data_t platform_data, uint32_t *curve, uint32_t curve_size, uint8_t motor_id)
+void output_not_jerky_motion_curve(no_jerky_output_t output_ch, uint32_t *curve, uint32_t curve_size)
 {
+    printf("here\n");
+
     // create RMT curve encoder
     esp32s3_rmt_encoder_data_t encoder_data = {
-        .rmt_channel = platform_data.esp32s3_rmt.rmt_channels[motor_id],
+        .rmt_channel = output_ch.rmt_channel,
         .rmt_encoder = NULL,
         .data = curve,
         .data_size = curve_size
     };
 
     esp32s3_rmt_new_stepper_curve_encoder(&encoder_data);
-    printf("ID: %d, encoded\n", motor_id);
+    printf("here2\n");
 
     rmt_transmit_config_t rmt_tx_config = {.loop_count=0};
 
     // transmit RMT curve
-    ESP_ERROR_CHECK(rmt_transmit(platform_data.esp32s3_rmt.rmt_channels[motor_id],
+    ESP_ERROR_CHECK(rmt_transmit(output_ch.rmt_channel,
                                  encoder_data.rmt_encoder,
                                  &encoder_data.data,
-                                 encoder_data.data_size,
+                                 2,
                                  &rmt_tx_config));
-    printf("ID: %d, transmitted\n", motor_id);
+    printf("here3\n");
 
     // delete RMT curve encoder - free the allocated memory!!
     encoder_data.rmt_encoder->del(encoder_data.rmt_encoder);
 }
 
 
-void wait_for_motor_motion_done(no_jerky_platform_data_t platform_data)
+void wait_for_motor_motion_done(no_jerky_output_t output_ch)
 {
-    esp32s3_rmt_wait_for_all_tx_done(platform_data.esp32s3_rmt, platform_data.n_motors);
+    rmt_tx_wait_all_done(output_ch.rmt_channel, -1);
 }
+
+// TODO
+// void resync_no_jerky_group_output(no_jerky_output_t output_ch)
+// {
+//     ESP_ERROR_CHECK(rmt_sync_reset(output_ch.esp32s3_rmt.rmt_sync_manager));
+// }
 
 
 void no_jerky_delay_ms(uint16_t ms)

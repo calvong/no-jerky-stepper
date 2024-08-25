@@ -8,12 +8,6 @@ extern "C" {
 #include <driver/rmt_tx.h>
 
 
-typedef struct esp32s3_rmt {
-    rmt_channel_handle_t* rmt_channels;
-    rmt_sync_manager_handle_t rmt_sync_manager;
-} esp32s3_rmt_t;
-
-
 typedef struct esp32s3_rmt_encoder_data {
     rmt_channel_handle_t rmt_channel;
     rmt_encoder_handle_t rmt_encoder;
@@ -23,10 +17,9 @@ typedef struct esp32s3_rmt_encoder_data {
 
 
 // public functions
-esp32s3_rmt_t esp32s3_rmt_init(uint8_t n_motors, uint8_t step_pins[]);
+rmt_channel_handle_t esp32s3_rmt_init(uint8_t step_pin);
 esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *encoder_data);
-void esp32s3_rmt_channels_sync_reset(esp32s3_rmt_t esp32s3_rmt);
-void esp32s3_rmt_wait_for_all_tx_done(esp32s3_rmt_t esp32s3_rmt, uint8_t n_channels);
+
 
 // static functions
 static size_t esp32s3_rmt_encode_stepper_curve(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state);
