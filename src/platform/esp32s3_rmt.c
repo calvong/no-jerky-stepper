@@ -7,8 +7,8 @@
 typedef struct esp32s3_rmt_curve_encoder {
     rmt_encoder_t base;
     rmt_encoder_handle_t copy_encoder;
-    uint32_t data_size;
-    rmt_symbol_word_t* curve;
+    uint32_t n_symbols;
+    rmt_symbol_word_t* curve_symbols;
 } esp32s3_rmt_curve_encoder_t;
 
 
@@ -20,8 +20,8 @@ rmt_channel_handle_t esp32s3_rmt_init(uint8_t step_pin)
     rmt_tx_channel_config_t rmt_tx_config = {
         .gpio_num = (gpio_num_t) step_pin,
         .clk_src = RMT_CLK_SRC_DEFAULT,
-        .mem_block_symbols = 140,    // memory block size, n * 4 = 4n Bytes 
-        .trans_queue_depth = 1,    // number of transactions that can be queued in the background
+        .mem_block_symbols = 48,    // memory block size, n * 4 = 4n Bytes 
+        .trans_queue_depth = 10,    // number of transactions that can be queued in the background
         .resolution_hz = 1000000,   // 1 MHz resolution
         .flags.invert_out = false,  // output signal is not inverted
         // .flags.with_dma = true,     // use DMA - limited to only 1 channel if using DMA!!!
@@ -38,34 +38,75 @@ rmt_channel_handle_t esp32s3_rmt_init(uint8_t step_pin)
 }
 
 
-
 esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *encoder_data)
 {
     esp_err_t ret = ESP_OK;
 
     esp32s3_rmt_curve_encoder_t* step_encoder = NULL;
 
+
+    // allocate memory for the encoder
+    printf("Allocating memory for the RMT encoder\n");
+    step_encoder = rmt_alloc_encoder_mem(sizeof(esp32s3_rmt_curve_encoder_t) + encoder_data->n_symbols * sizeof(rmt_symbol_word_t));
+    if (step_encoder == NULL)
+    {
+        printf("Failed to allocate memory for the RMT encoder\n");
+    }
+    printf("Allocated memory for the RMT encoder\n");
+
+    // create new copy encoder
+    rmt_copy_encoder_config_t copy_encoder_config = {};
+    if (rmt_new_copy_encoder(&copy_encoder_config, &step_encoder->copy_encoder) != ESP_OK)
+    {
+        printf("Failed to create new RMT copy encoder\n");
+        return ESP_FAIL;
+    }
+    printf("Created new RMT copy encoder\n");
+
+    // set the RMT encoder data
+    step_encoder->base.del = esp32s3_rmt_del_stepper_curve_encoder;
+    step_encoder->base.reset = esp32s3_rmt_reset_stepper_curve_encoder;
+    step_encoder->base.encode = esp32s3_rmt_encode_stepper_curve;
+
+    encoder_data->rmt_encoder = &(step_encoder->base);
+    step_encoder->n_symbols = encoder_data->n_symbols;
+    step_encoder->curve_symbols = encoder_data->symbols;
+
+    return ret;
+}
+
+
+/**
+ * @brief Convert stepper curve data into RMT symbol format
+ * 
+ * @param curve 
+ * @param curve_size 
+ * @param curve_symbol_word 
+ * @param curve_symbol_word_size 
+ */
+void esp32s3_stepper_curve_to_rmt_symbol(uint32_t* curve, uint32_t curve_size, rmt_symbol_word_t **curve_symbol_word, uint32_t *curve_symbol_word_size)
+{
     // --- convert user data into RMT symbol format ---
     // allocate memory for the curve, start with the input data size
-    uint32_t allocated_curve_memory = encoder_data->data_size;
-    rmt_symbol_word_t* curve_symbol_word = (rmt_symbol_word_t*) malloc(allocated_curve_memory * sizeof(rmt_symbol_word_t));
+    uint32_t allocated_curve_memory = curve_size;
+    (*curve_symbol_word) = (rmt_symbol_word_t*) malloc(allocated_curve_memory * sizeof(rmt_symbol_word_t));
 
-    uint32_t curve_size = 0;
-    for (uint32_t i = 0; i < encoder_data->data_size; i++)
+    uint32_t symbol_size = 0;
+    for (uint32_t i = 0; i < curve_size; i++)
     {
         // check if need to reallocate memory for the curve
-        increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, curve_symbol_word);
+        increase_allocated_curve_memory_check(symbol_size, &allocated_curve_memory, (*curve_symbol_word));
 
-        // check if the duration exceeds 0x8000 (2^15 not uint16_t!!)
+        // check if the duration exceeds 0x8000 (2^15 not uint16_t!! RMT symbol word size is 15bits)
         uint8_t n_shifts = 1;
-        if (encoder_data->data[i] > (uint32_t) 0x8000)
+        if (curve[i] > (uint32_t) 0x8000)
         {
 
             uint32_t big_symbol = 0;
             // maximum divide by 2^10 = 1024
             for (uint8_t k = 1; k < 10; k++)
             {
-                big_symbol = encoder_data->data[i] >> (k + 1);
+                big_symbol = curve[i] >> (k + 1);
 
                 if (big_symbol <= (uint32_t) 0x8000)
                 {
@@ -75,78 +116,56 @@ esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *enco
             }
             // split the duration into multiple symbols
             uint16_t symbol_duration = (uint16_t) big_symbol;
-            printf("big symbol: %ld, duration=%d, OG=%ld, nshifts=%d, i=%ld, curve_idx=%ld\n", big_symbol,symbol_duration, encoder_data->data[i], n_shifts, i, curve_size);
+            printf("big symbol: %ld, duration=%d, OG=%ld, nshifts=%d, i=%ld, curve_idx=%ld\n", big_symbol,symbol_duration, curve[i], n_shifts, i, curve_size);
 
             for (uint8_t j = 0; j < 1 << (n_shifts - 1); j++)
             {   
-                increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, curve_symbol_word);
+                increase_allocated_curve_memory_check(symbol_size, &allocated_curve_memory, (*curve_symbol_word));
 
-                curve_symbol_word[curve_size].level0 = 1;
-                curve_symbol_word[curve_size].duration0 = symbol_duration;
-                curve_symbol_word[curve_size].level1 = 1;
-                curve_symbol_word[curve_size].duration1 = symbol_duration;
+                (*curve_symbol_word)[symbol_size].level0 = 1;
+                (*curve_symbol_word)[symbol_size].duration0 = symbol_duration;
+                (*curve_symbol_word)[symbol_size].level1 = 1;
+                (*curve_symbol_word)[symbol_size].duration1 = symbol_duration;
          
-                curve_size++;
+                symbol_size++;
             }
             for (uint8_t j = 0; j < 1 << (n_shifts - 1); j++)
             {
-                increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, curve_symbol_word);
+                increase_allocated_curve_memory_check(symbol_size, &allocated_curve_memory, (*curve_symbol_word));
 
-                curve_symbol_word[curve_size].level0 = 0;
-                curve_symbol_word[curve_size].duration0 = symbol_duration;
-                curve_symbol_word[curve_size].level1 = 0;
-                curve_symbol_word[curve_size].duration1 = symbol_duration;
+                (*curve_symbol_word)[symbol_size].level0 = 0;
+                (*curve_symbol_word)[symbol_size].duration0 = symbol_duration;
+                (*curve_symbol_word)[symbol_size].level1 = 0;
+                (*curve_symbol_word)[symbol_size].duration1 = symbol_duration;
 
-                curve_size++;
+                symbol_size++;
             }
         }
         else
         {
-            increase_allocated_curve_memory_check(curve_size, &allocated_curve_memory, curve_symbol_word);
+            increase_allocated_curve_memory_check(symbol_size, &allocated_curve_memory, (*curve_symbol_word));
 
-            uint16_t symbol_duration = (uint16_t) encoder_data->data[i] >> 1; // divide timestep by 2 to create one step pulse
+            uint16_t symbol_duration = (uint16_t) curve[i] >> 1; // divide timestep by 2 to create one step pulse
             // FIXME: for duration that exceeds 0xFFFF, split the duration into multiple symbols
-            curve_symbol_word[curve_size].level0 = 1;
-            curve_symbol_word[curve_size].duration0 = symbol_duration;
-            curve_symbol_word[curve_size].level1 = 0;
-            curve_symbol_word[curve_size].duration1 = symbol_duration;
+            (*curve_symbol_word)[symbol_size].level0 = 1;
+            (*curve_symbol_word)[symbol_size].duration0 = symbol_duration;
+            (*curve_symbol_word)[symbol_size].level1 = 0;
+            (*curve_symbol_word)[symbol_size].duration1 = symbol_duration;
 
-            curve_size++;
+            symbol_size++;
         }
     }
 
-    // allocate memory for the encoder
-    step_encoder = rmt_alloc_encoder_mem(sizeof(esp32s3_rmt_curve_encoder_t) + curve_size * sizeof(rmt_symbol_word_t));
-    if (step_encoder == NULL)
-    {
-        printf("Failed to allocate memory for the RMT encoder\n");
-    }
+    printf("curve_symbol_word[0].duration0: %d\n", (*curve_symbol_word)[0].duration0);
 
-    // create new copy encoder
-    rmt_copy_encoder_config_t copy_encoder_config = {};
-    if (rmt_new_copy_encoder(&copy_encoder_config, &step_encoder->copy_encoder) != ESP_OK)
-    {
-        printf("Failed to create new RMT copy encoder\n");
-        return ESP_FAIL;
-    }
-
-    // set the RMT encoder data
-    step_encoder->base.del = esp32s3_rmt_del_stepper_curve_encoder;
-    step_encoder->base.reset = esp32s3_rmt_reset_stepper_curve_encoder;
-    step_encoder->base.encode = esp32s3_rmt_encode_stepper_curve;
-
-    encoder_data->rmt_encoder = &(step_encoder->base);
-    step_encoder->data_size = curve_size;
-    
     // shrink the curve memory to the actual size
-    curve_symbol_word = (rmt_symbol_word_t*) realloc(curve_symbol_word, curve_size * sizeof(rmt_symbol_word_t));
-    
-    step_encoder->curve = curve_symbol_word;
+    (*curve_symbol_word) = (rmt_symbol_word_t*) realloc((*curve_symbol_word), symbol_size * sizeof(rmt_symbol_word_t));
+    printf("after relloc curve_symbol_word[0].duration0: %d\n", (*curve_symbol_word)[0].duration0);
 
-    printf("Curve size: %ld\n", curve_size);
-
-    return ret;
+    printf("symbol size: %ld\n", symbol_size);
+    *curve_symbol_word_size = symbol_size;
 }
+
 
 
 /**
@@ -165,8 +184,8 @@ static size_t esp32s3_rmt_encode_stepper_curve(rmt_encoder_t *encoder, rmt_chann
 
     encoded_symbols = copy_encoder->encode(copy_encoder,
                                            channel,
-                                           stepper_encoder->curve,
-                                           stepper_encoder->data_size * sizeof(rmt_symbol_word_t),
+                                           stepper_encoder->curve_symbols,
+                                           stepper_encoder->n_symbols * sizeof(rmt_symbol_word_t),
                                            &session_state);
 
     *ret_state = session_state;
@@ -179,7 +198,7 @@ static esp_err_t esp32s3_rmt_del_stepper_curve_encoder(rmt_encoder_t *encoder)
 {
     esp32s3_rmt_curve_encoder_t *stepper_encoder = __containerof(encoder, esp32s3_rmt_curve_encoder_t, base);
     rmt_del_encoder(stepper_encoder->copy_encoder);
-    free(stepper_encoder->curve);
+    free(stepper_encoder->curve_symbols);
     free(stepper_encoder);
 
     return ESP_OK;

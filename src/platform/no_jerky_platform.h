@@ -11,6 +11,7 @@ extern "C" {
 
 #include <stdint.h>
 #include "esp32s3_rmt.h"
+#include <esp_async_memcpy.h>
 
 
 typedef struct no_jerky_motor_pins

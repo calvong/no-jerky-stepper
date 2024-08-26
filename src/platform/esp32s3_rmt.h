@@ -11,14 +11,15 @@ extern "C" {
 typedef struct esp32s3_rmt_encoder_data {
     rmt_channel_handle_t rmt_channel;
     rmt_encoder_handle_t rmt_encoder;
-    uint32_t* data;         
-    uint32_t data_size;     
+    rmt_symbol_word_t* symbols;         
+    uint32_t n_symbols;     
 } esp32s3_rmt_encoder_data_t;
 
 
 // public functions
 rmt_channel_handle_t esp32s3_rmt_init(uint8_t step_pin);
 esp_err_t esp32s3_rmt_new_stepper_curve_encoder(esp32s3_rmt_encoder_data_t *encoder_data);
+void esp32s3_stepper_curve_to_rmt_symbol(uint32_t* curve, uint32_t curve_size, rmt_symbol_word_t **curve_symbol_word, uint32_t *curve_symbol_word_size);
 
 
 // static functions
