@@ -78,22 +78,46 @@ Group::~Group()
     delete impl_;
 }
 
-esp_err_t Group::moveTo(const int32_t* targets, float duration_s)
+namespace {
+
+esp_err_t group_move_impl(GroupImpl* g, const int32_t* targets, float duration_s, const Cruise* cruise)
 {
     ESP_RETURN_ON_FALSE(targets, ESP_ERR_INVALID_ARG, TAG, "targets is null");
     PlannerTask& planner = PlannerTask::get();
     Status st;
     {
         PlannerLock lk;
-        planner.prepare_locked(impl_->members[0]);
+        planner.prepare_locked(g->members[0]);
         double t[kMaxGroupAxes];
-        for (int i = 0; i < impl_->n; ++i) {
+        for (int i = 0; i < g->n; ++i) {
             t[i] = targets[i];
         }
-        st = group_move_to(impl_->axes, impl_->n, t, planner.from_commit(impl_->members[0], duration_s));
+        st = group_move_to(g->axes, g->n, t, planner.from_commit(g->members[0], duration_s),
+                           cruise ? *cruise : g->cruise);
     }
     planner.wake();
     return to_esp_err(st);
+}
+
+}  // namespace
+
+esp_err_t Group::moveTo(const int32_t* targets, float duration_s)
+{
+    return group_move_impl(impl_, targets, duration_s, nullptr);
+}
+
+esp_err_t Group::moveTo(const int32_t* targets, float duration_s, const Cruise& cruise)
+{
+    ESP_RETURN_ON_FALSE(cruise_valid(cruise), ESP_ERR_INVALID_ARG, TAG, "invalid cruise setting");
+    return group_move_impl(impl_, targets, duration_s, &cruise);
+}
+
+esp_err_t Group::setCruise(const Cruise& cruise)
+{
+    ESP_RETURN_ON_FALSE(cruise_valid(cruise), ESP_ERR_INVALID_ARG, TAG, "invalid cruise setting");
+    PlannerLock lk;
+    impl_->cruise = cruise;
+    return ESP_OK;
 }
 
 esp_err_t Group::followPath(const GroupWaypoint* waypoints, size_t n, const PathOptions& options)

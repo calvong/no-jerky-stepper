@@ -21,6 +21,7 @@ struct GroupImpl {
     StepperImpl* members[kMaxGroupAxes] = {};
     Axis* axes[kMaxGroupAxes] = {};
     int n = 0;
+    Cruise cruise;  ///< cruise setting of Group::moveTo
     rmt_sync_manager_handle_t sync = nullptr;
 };
 

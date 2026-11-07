@@ -6,6 +6,7 @@ void nj_test_encoder();
 void nj_test_retarget();
 void nj_test_path();
 void nj_test_group();
+void nj_test_cruise();
 
 /// Runs every unit test; returns the number of failures.
 int nj_run_all_tests();

@@ -27,6 +27,7 @@ uint32_t us_to_ticks(float us, uint32_t lo, uint32_t hi)
 esp_err_t Stepper::create(const StepperConfig& config, Stepper** out)
 {
     ESP_RETURN_ON_FALSE(out, ESP_ERR_INVALID_ARG, TAG, "out is null");
+    ESP_RETURN_ON_FALSE(cruise_valid(config.cruise), ESP_ERR_INVALID_ARG, TAG, "invalid cruise setting");
     PlannerTask& planner = PlannerTask::get();
     ESP_RETURN_ON_ERROR(planner.ensure_started(), TAG, "planner task");
 
@@ -40,6 +41,7 @@ esp_err_t Stepper::create(const StepperConfig& config, Stepper** out)
     AxisConfig ac;
     ac.gen = make_gen_config(pulse, setup);
     ac.limits = config.limits;
+    ac.cruise = config.cruise;
     impl->axis.configure(ac);
 
     ChannelConfig cc;
@@ -84,27 +86,48 @@ Stepper::~Stepper()
     delete impl_;
 }
 
-esp_err_t Stepper::moveTo(int32_t target, float duration_s)
+namespace {
+
+esp_err_t move_to_impl(StepperImpl* impl, int32_t target, float duration_s, const Cruise* cruise)
 {
     PlannerTask& planner = PlannerTask::get();
     Status st;
     {
         PlannerLock lk;
-        planner.prepare_locked(impl_);
-        st = impl_->axis.move_to(target, planner.from_commit(impl_, duration_s));
+        planner.prepare_locked(impl);
+        st = impl->axis.move_to(target, planner.from_commit(impl, duration_s), -1, cruise);
     }
     planner.wake();
     return to_esp_err(st);
 }
 
+int32_t relative_target(StepperImpl* impl, int32_t delta)
+{
+    PlannerLock lk;
+    return static_cast<int32_t>(std::llround(impl->axis.target())) + delta;
+}
+
+}  // namespace
+
+esp_err_t Stepper::moveTo(int32_t target, float duration_s)
+{
+    return move_to_impl(impl_, target, duration_s, nullptr);
+}
+
+esp_err_t Stepper::moveTo(int32_t target, float duration_s, const Cruise& cruise)
+{
+    ESP_RETURN_ON_FALSE(cruise_valid(cruise), ESP_ERR_INVALID_ARG, TAG, "invalid cruise setting");
+    return move_to_impl(impl_, target, duration_s, &cruise);
+}
+
 esp_err_t Stepper::move(int32_t delta, float duration_s)
 {
-    int32_t target;
-    {
-        PlannerLock lk;
-        target = static_cast<int32_t>(std::llround(impl_->axis.target())) + delta;
-    }
-    return moveTo(target, duration_s);
+    return moveTo(relative_target(impl_, delta), duration_s);
+}
+
+esp_err_t Stepper::move(int32_t delta, float duration_s, const Cruise& cruise)
+{
+    return moveTo(relative_target(impl_, delta), duration_s, cruise);
 }
 
 esp_err_t Stepper::followPath(const Waypoint* waypoints, size_t n, const PathOptions& options)
@@ -187,6 +210,14 @@ esp_err_t Stepper::setLimits(const Limits& limits)
 {
     PlannerLock lk;
     impl_->axis.set_limits(limits);
+    return ESP_OK;
+}
+
+esp_err_t Stepper::setCruise(const Cruise& cruise)
+{
+    ESP_RETURN_ON_FALSE(cruise_valid(cruise), ESP_ERR_INVALID_ARG, TAG, "invalid cruise setting");
+    PlannerLock lk;
+    impl_->axis.set_cruise(cruise);
     return ESP_OK;
 }
 

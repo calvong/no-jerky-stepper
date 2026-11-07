@@ -2,23 +2,30 @@
 
 #include <cmath>
 
+#include "motion/cruise.hpp"
 #include "motion/min_jerk.hpp"
 
 namespace nj {
 
 Status MinJerkStrategy::plan_move(const State& from, double target, double duration, const Limits& lim,
-                                  PolySegment* out, int max_out, int* n_out) const
+                                  const Cruise& cruise, PolySegment* out, int max_out, int* n_out) const
 {
     *n_out = 0;
     if (max_out < 1 || !std::isfinite(target)) {
         return Status::InvalidArg;
     }
+    if (!(duration > 0.0) && !lim.any()) {
+        return Status::InvalidArg;
+    }
+    const double f = cruise_fraction(cruise, std::fabs(target - from.p), lim);
+    if (f > 0.0 && max_out >= 3) {
+        const CruiseTiming tm = cruise_timing(from, target, f, duration, lim);
+        *n_out = build_cruise_move(from, target, tm, out);
+        return Status::Ok;
+    }
     const State to{target, 0.0, 0.0};
     double T = duration;
     if (!(T > 0.0)) {
-        if (!lim.any()) {
-            return Status::InvalidArg;
-        }
         // Best effort when the start state makes the limits unreachable (e.g. limits lowered
         // while moving): the duration with the smallest limit excess is used.
         T = min_jerk_duration(from, to, lim);

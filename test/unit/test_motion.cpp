@@ -115,7 +115,7 @@ static void test_unreachable_limits_are_best_effort()
     TEST_ASSERT_TRUE(T >= kMinSegmentDuration && T <= kMaxSegmentDuration);
     PolySegment seg[2];
     int n = 0;
-    TEST_ASSERT_EQUAL(Status::Ok, min_jerk_strategy().plan_move(s0, -5000.0, 0.0, lim, seg, 2, &n));
+    TEST_ASSERT_EQUAL(Status::Ok, min_jerk_strategy().plan_move(s0, -5000.0, 0.0, lim, Cruise{}, seg, 2, &n));
     TEST_ASSERT_EQUAL_INT(1, n);
     TEST_ASSERT_DOUBLE_WITHIN(1e-6, -5000.0, seg[0].end().p);
 }

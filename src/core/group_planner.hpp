@@ -19,7 +19,10 @@ int64_t group_commit_tick(Axis* const* axes, int n);
 /// group from standstill.
 void group_align(Axis* const* axes, int n);
 
-Status group_move_to(Axis* const* axes, int n, const double* targets, double duration);
+/// Straight-line move of all members ending at rest. With `cruise` (default Off) the move
+/// is ramp + cruise + ramp with one shared timing (see group_planner.cpp for the rules).
+Status group_move_to(Axis* const* axes, int n, const double* targets, double duration,
+                     const Cruise& cruise = Cruise{});
 Status group_follow_path(Axis* const* axes, int n, const GroupWaypoint* wps, int m, const PathOptions& opts);
 Status group_stop(Axis* const* axes, int n, double duration);
 

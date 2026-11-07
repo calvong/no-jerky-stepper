@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include "config.hpp"
+#include "motion/cruise.hpp"
 #include "motion/path_planner.hpp"
 #include "motion/strategy.hpp"
 #include "motion/trajectory.hpp"
@@ -24,6 +25,7 @@ namespace nj {
 struct AxisConfig {
     GenConfig gen;
     Limits limits;
+    Cruise cruise;                             ///< cruise phase of point-to-point moves
     const MotionStrategy* strategy = nullptr;  ///< nullptr = min-jerk
 };
 
@@ -37,9 +39,14 @@ public:
     void configure(const AxisConfig& c);
     void set_limits(const Limits& l) { cfg_.limits = l; }
     const Limits& limits() const { return cfg_.limits; }
+    void set_cruise(const Cruise& c) { cfg_.cruise = c; }
+    const Cruise& cruise() const { return cfg_.cruise; }
 
     // ---- planning (at_tick < 0 = own commit horizon; otherwise must be >= it) ----
-    Status move_to(double target, double duration, int64_t at_tick = -1);
+    /// Point-to-point move ending at rest. `cruise` overrides the configured cruise setting.
+    Status move_to(double target, double duration, int64_t at_tick = -1, const Cruise* cruise = nullptr);
+    /// Ramp + cruise + ramp move with a given timing (group moves share one timing).
+    Status move_cruise(double target, const CruiseTiming& timing, int64_t at_tick = -1);
     Status follow_path(const Waypoint* wps, int n, const PathOptions& opts, int64_t at_tick = -1);
     Status append_waypoints(const Waypoint* wps, int n);
     Status stop(double duration = 0.0, int64_t at_tick = -1);

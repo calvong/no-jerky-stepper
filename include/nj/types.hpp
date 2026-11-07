@@ -24,6 +24,25 @@ struct Limits {
     bool any() const { return v_max > 0.0 || a_max > 0.0 || j_max > 0.0; }
 };
 
+/// How a point-to-point move uses a constant-velocity (cruise) phase.
+enum class CruiseMode : uint8_t {
+    Off,       ///< one min-jerk quintic for the whole move
+    Distance,  ///< cruise for a fixed distance (`Cruise::value`, steps)
+    Percent,   ///< cruise for a share of the move (`Cruise::value`, 0 <= value < 100)
+    Auto,      ///< ramp up to v_max and cruise the rest (needs Limits::v_max)
+};
+
+/// Cruise phase of point-to-point moves: ramp up -> constant velocity -> ramp down.
+/// Each ramp is half of a rest-to-rest min-jerk profile, so p, v and a stay continuous.
+/// A move cruises only if its distance is >= `min_distance` and the resolved cruise
+/// distance is strictly between 0 and the move distance; otherwise it is a plain min-jerk
+/// quintic. Waypoint paths ignore this setting.
+struct Cruise {
+    CruiseMode mode = CruiseMode::Off;
+    double value = 0.0;         ///< Distance: cruise length [steps]; Percent: [0, 100); Auto: unused
+    double min_distance = 0.0;  ///< moves shorter than this never cruise [steps]
+};
+
 /// Result of a planning call in the platform-independent core.
 enum class Status : uint8_t {
     Ok = 0,

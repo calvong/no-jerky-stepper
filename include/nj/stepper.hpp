@@ -28,6 +28,7 @@ struct StepperConfig {
     float step_pulse_us = 3.0f;  ///< STEP high time
     float dir_setup_us = 5.0f;   ///< DIR stable before the next STEP edge
     Limits limits{};             ///< used when a duration is 0
+    Cruise cruise{};             ///< cruise phase of moveTo/move (default off)
 };
 
 struct StepperImpl;
@@ -43,10 +44,14 @@ public:
     Stepper(const Stepper&) = delete;
     Stepper& operator=(const Stepper&) = delete;
 
-    /// Minimum-jerk move to `target`, ending at rest.
+    /// Minimum-jerk move to `target`, ending at rest. Long moves get a constant-velocity
+    /// phase according to the cruise setting (see setCruise()).
     esp_err_t moveTo(int32_t target, float duration_s = 0.0f);
+    /// Same, with a cruise setting for this move only.
+    esp_err_t moveTo(int32_t target, float duration_s, const Cruise& cruise);
     /// Relative move from the current target.
     esp_err_t move(int32_t delta, float duration_s = 0.0f);
+    esp_err_t move(int32_t delta, float duration_s, const Cruise& cruise);
 
     /// Replace the pending motion by a path through `waypoints` (ends at rest).
     esp_err_t followPath(const Waypoint* waypoints, size_t n, const PathOptions& options = {});
@@ -60,6 +65,8 @@ public:
     /// Redefine the current position (only while idle).
     esp_err_t setPosition(int32_t position);
     esp_err_t setLimits(const Limits& limits);
+    /// Cruise setting used by moveTo/move (ESP_ERR_INVALID_ARG if out of range).
+    esp_err_t setCruise(const Cruise& cruise);
     esp_err_t enable(bool on);
 
     /// Signed number of pulses emitted (leads the motor by at most one RMT buffer).

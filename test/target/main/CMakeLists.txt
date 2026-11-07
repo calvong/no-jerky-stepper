@@ -7,5 +7,6 @@ idf_component_register(SRCS "test_main.cpp"
                             "${UNIT}/test_retarget.cpp"
                             "${UNIT}/test_path.cpp"
                             "${UNIT}/test_group.cpp"
+                            "${UNIT}/test_cruise.cpp"
                        INCLUDE_DIRS "${UNIT}" "${CMAKE_CURRENT_LIST_DIR}/../../../src"
                        REQUIRES no-jerky-stepper unity)

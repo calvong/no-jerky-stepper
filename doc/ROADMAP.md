@@ -10,6 +10,7 @@
 | 3 Retarget & stops | commit-horizon splice with C2 continuity, smooth stop (quartic), immediate stop, best-effort limits from moving states |
 | 4 Waypoints | `followPath` / `appendWaypoints`, `Stop` / `Heuristic` / `Optimal` (C4) via policies, limit-scaled durations, frozen near-arrival waypoints, `waypoints` example |
 | 5 Groups | `nj::Group`, shared commit tick and durations, RMT sync start, keep-alive streaming, `multi_axis` example |
+| Cruise (point-to-point) | ramp + constant velocity + ramp for `moveTo` / `move` / `Group::moveTo`; `Distance`, `Percent` and `Auto` modes with `min_distance`; per-stepper / per-group setting plus per-call override |
 
 ## Next: hardware bring-up (do first)
 
@@ -26,6 +27,17 @@ ESP32-S3 with a logic analyser on STEP/DIR:
 
 ## Stage 6: useful features
 
+- **TODO: cruise on waypoint paths.** Cruise is only implemented for point-to-point moves.
+  Paths ignore the `Cruise` setting. For long path segments, split each one into ramp,
+  cruise and ramp. This needs:
+  - The via-point solver to treat the cruise ends as knots with fixed `v = ±v_c`, `a = 0`.
+    The optimal C4 conditions then apply only between ramps and true waypoints.
+  - A decision on the cruise speed when the neighbouring waypoints are not at rest
+    (`Heuristic` / `Optimal` via velocities).
+  - Bookkeeping for several trajectory segments per waypoint: tags and `pop_passed`, frozen
+    arrivals (`kFreezeTime`), the `kPathCapacity + 2 <= kSegmentPool` budget, and
+    `appendWaypoints` after a cruising move.
+  - Shared timing for group paths (`group_follow_path`), so coordinated paths stay in sync.
 - **Exact position feedback**: PCNT counting the STEP pin through the GPIO matrix, with DIR
   as the count direction. Fixes `position()` lead and immediate-stop accounting.
 - **Enable management**: auto-enable before motion, disable after an idle timeout, with

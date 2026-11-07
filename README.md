@@ -12,6 +12,9 @@ RMT v2 driver.
 
 - **Point A → B in a given time** with a minimum-jerk profile, or as fast as velocity /
   acceleration / jerk limits allow.
+- **Cruise for long moves**: point-to-point moves can be ramp → constant velocity → ramp,
+  with min-jerk ramps. The cruise is a fixed distance, a percentage of the move, or Auto
+  (reach `v_max`, cruise the rest), and only applies above a minimum move distance.
 - **Waypoint paths**: three via-point policies (`Stop`, `Heuristic`, jerk-`Optimal` C4
   spline), timed or limit-scaled segments, streaming `appendWaypoints()`.
 - **Runtime retargeting**: any move, path or stop can be issued while moving. The new plan
@@ -62,6 +65,7 @@ Requirements: ESP-IDF ≥ 5.3 (`rmt_new_simple_encoder`), target ESP32-S3.
 |---|---|
 | `Stepper::create(cfg, &m)` | Claim an RMT TX channel; position starts at 0 |
 | `moveTo(target, T=0)` / `move(delta, T=0)` | Min-jerk move ending at rest; `T = 0` uses the limits |
+| `setCruise(cruise)`, `moveTo(target, T, cruise)` | Cruise phase for long moves (per stepper, or per call) |
 | `followPath(wps, n, {policy})` | Replace the pending motion with a path |
 | `appendWaypoints(wps, n)` | Extend the current path or move |
 | `stop(Smooth \| Immediate, T=0)` | Decelerate to rest, or cut pulses now |
@@ -72,6 +76,29 @@ Durations are counted from the call. When a duration is 0, the shortest one with
 `Limits` is used. Limits are not enforced on durations you give explicitly. If a
 moving start state makes the limits unreachable, `moveTo` uses the duration with the
 smallest excess.
+
+### Cruise
+
+```cpp
+nj::Cruise c;
+c.mode = nj::CruiseMode::Auto;  // or Distance / Percent
+c.min_distance = 10000;         // shorter moves stay one min-jerk quintic
+m->setCruise(c);                // also: cfg.cruise, or m->moveTo(target, T, c) for one move
+```
+
+Pick the mode by what should stay fixed as the move length changes:
+
+| Mode | `value` | Use when |
+|---|---|---|
+| `Distance` | cruise length [steps] | you need a constant-speed stretch of known length (scan, dispense, cut) |
+| `Percent` | share of the move, 0–100 | the profile shape should scale with the move |
+| `Auto` | unused | you want the fastest long moves: ramp up to `v_max`, cruise the rest |
+
+A move cruises only if it is at least `min_distance` long and the cruise is shorter than the
+move. Otherwise it is the usual single quintic. In v-bound moves, cruising saves up to 47% of
+the time (`1.875·D/v_max` becomes about `D/v_max`). With an explicit duration, the cruise
+splits the time instead of changing it. `Group::setCruise` / `Group::moveTo(targets, T, c)`
+do the same for coordinated straight-line moves. Waypoint paths do not cruise yet.
 
 ## How it works (short)
 

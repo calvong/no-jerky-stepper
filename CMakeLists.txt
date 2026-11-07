@@ -7,6 +7,7 @@
 set(NJ_CORE_SRCS
     "src/motion/poly.cpp"
     "src/motion/min_jerk.cpp"
+    "src/motion/cruise.cpp"
     "src/motion/strategy.cpp"
     "src/motion/trajectory.cpp"
     "src/motion/path_planner.cpp"

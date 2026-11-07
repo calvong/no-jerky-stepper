@@ -57,4 +57,23 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(m->moveTo(0));
     m->waitUntilIdle();
     report(m, "back home");
+
+    // 5. Long move with a cruise phase: ramp up to v_max, cruise, ramp down (min-jerk ramps).
+    //    About 5.3 s instead of 9.4 s for a single quintic at these limits.
+    nj::Cruise cruise;
+    cruise.mode = nj::CruiseMode::Auto;
+    cruise.min_distance = 10000;
+    ESP_ERROR_CHECK(m->setCruise(cruise));
+    ESP_ERROR_CHECK(m->moveTo(100000));
+    m->waitUntilIdle();
+    report(m, "auto cruise to 100000");
+
+    // 6. Cruise over 60 % of the distance, in exactly 8 s, for this move only
+    //    (cruise speed (1.875 * 40000 + 60000) / 8 = 16875 steps/s).
+    nj::Cruise pct;
+    pct.mode = nj::CruiseMode::Percent;
+    pct.value = 60;
+    ESP_ERROR_CHECK(m->moveTo(0, 8.0f, pct));
+    m->waitUntilIdle();
+    report(m, "60 % cruise home in 8 s");
 }

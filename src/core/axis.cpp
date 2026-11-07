@@ -67,16 +67,34 @@ Status Axis::splice(int64_t at_tick, const PolySegment* segs, int n)
     return Status::Ok;
 }
 
-Status Axis::move_to(double target, double duration, int64_t at_tick)
+Status Axis::move_to(double target, double duration, int64_t at_tick, const Cruise* cruise)
 {
     const int64_t tick = resolve_tick(at_tick);
     const State s0 = traj_.eval(gen_.to_time(tick));
     PolySegment segs[4];
     int n = 0;
-    const Status st = strategy_->plan_move(s0, target, duration, cfg_.limits, segs, 4, &n);
+    const Cruise& c = cruise ? *cruise : cfg_.cruise;
+    const Status st = strategy_->plan_move(s0, target, duration, cfg_.limits, c, segs, 4, &n);
     if (st != Status::Ok) {
         return st;
     }
+    const Status sp = splice(tick, segs, n);
+    if (sp == Status::Ok) {
+        path_n_ = 0;
+    }
+    return sp;
+}
+
+Status Axis::move_cruise(double target, const CruiseTiming& timing, int64_t at_tick)
+{
+    if (!std::isfinite(target) || !(timing.f > 0.0 && timing.f < 1.0) || !(timing.T_in > 0.0) ||
+        !(timing.T_out > 0.0)) {
+        return Status::InvalidArg;
+    }
+    const int64_t tick = resolve_tick(at_tick);
+    const State s0 = traj_.eval(gen_.to_time(tick));
+    PolySegment segs[3];
+    const int n = build_cruise_move(s0, target, timing, segs);
     const Status sp = splice(tick, segs, n);
     if (sp == Status::Ok) {
         path_n_ = 0;

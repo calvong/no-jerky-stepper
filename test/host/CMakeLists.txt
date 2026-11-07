@@ -23,6 +23,7 @@ set(ROOT ${CMAKE_CURRENT_LIST_DIR}/../..)
 add_library(nj_core STATIC
     ${ROOT}/src/motion/poly.cpp
     ${ROOT}/src/motion/min_jerk.cpp
+    ${ROOT}/src/motion/cruise.cpp
     ${ROOT}/src/motion/strategy.cpp
     ${ROOT}/src/motion/trajectory.cpp
     ${ROOT}/src/motion/path_planner.cpp
@@ -44,7 +45,8 @@ add_executable(nj_tests
     ${UNIT}/test_encoder.cpp
     ${UNIT}/test_retarget.cpp
     ${UNIT}/test_path.cpp
-    ${UNIT}/test_group.cpp)
+    ${UNIT}/test_group.cpp
+    ${UNIT}/test_cruise.cpp)
 target_include_directories(nj_tests PRIVATE ${UNIT})
 target_link_libraries(nj_tests PRIVATE nj_core unity)
 

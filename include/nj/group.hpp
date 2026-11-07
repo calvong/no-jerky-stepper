@@ -26,8 +26,15 @@ public:
     Group(const Group&) = delete;
     Group& operator=(const Group&) = delete;
 
-    /// targets[i] belongs to member i.
+    /// targets[i] belongs to member i. Long moves get a constant-velocity phase according to
+    /// the group's cruise setting (members' own settings are not used). All members share one
+    /// timing, so a rest-to-rest move stays a straight line.
     esp_err_t moveTo(const int32_t* targets, float duration_s = 0.0f);
+    /// Same, with a cruise setting for this move only.
+    esp_err_t moveTo(const int32_t* targets, float duration_s, const Cruise& cruise);
+    /// Cruise setting of moveTo (default off). Distance / Percent / min_distance are measured
+    /// on the member with the longest travel. ESP_ERR_INVALID_ARG if out of range.
+    esp_err_t setCruise(const Cruise& cruise);
     esp_err_t followPath(const GroupWaypoint* waypoints, size_t n, const PathOptions& options = {});
     esp_err_t stop(StopMode mode = StopMode::Smooth, float duration_s = 0.0f);
 

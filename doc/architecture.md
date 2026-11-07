@@ -61,6 +61,38 @@ so the S3's software double is cheap enough. The ISR only does integer work.
   is widened to the start value. If the limits still cannot be met, the duration with the
   smallest excess is used.
 
+## Cruise (long point-to-point moves)
+
+One quintic reaches its peak velocity, 1.875 times its average, for only an instant. A long
+v-bound move therefore takes `1.875·D/v_max`. With a `Cruise` setting, `moveTo` plans three
+segments instead: ramp, constant velocity, ramp (`src/motion/cruise.*`).
+
+- Each ramp is **half of a rest-to-rest min-jerk profile**, covering distance `d_r` in time
+  `T_r`. It ends at `v_c = 1.875·d_r/T_r` with `a = 0`. The quintic through those boundary
+  values is unique, so `min_jerk()` reproduces it exactly. From the limits,
+  `T_r = rest_to_rest_duration(2·d_r)/2`. Its peaks are `v_c`, `2.887·d_r/T_r²` and
+  `15·d_r/T_r³`, so `v_c ≤ v_max` holds automatically.
+- With cruise share `f` (`d_c = f·L`, `d_r = (1−f)·L/2`), the cruise time is
+  `T_c = 2f·T_r/(1.875(1−f))`, which does not depend on L. Group members with the same f and
+  `T_r` therefore share their timing and move in a straight line. For an explicit total `T`:
+  `T_r = T·0.9375(1−f)/(1.875(1−f)+f)`.
+- Modes:
+  - `Distance`: `d_c = value`.
+  - `Percent`: `d_c = value% · L`.
+  - `Auto`: the shortest ramp that reaches `v_max`,
+    `d_r* = max(0.821·v²/a, √(2.276·v³/j))`, and the cruise covers the rest.
+
+  A move cruises only when `L ≥ min_distance` and `0 < d_c < L`. Otherwise it is the usual
+  single quintic.
+- Groups: Distance, Percent and min_distance are measured on the member with the longest
+  travel. Auto tries the share at which each member just reaches its own `v_max` and keeps
+  the fastest option for the whole group. Members' own cruise settings are ignored.
+- Moving start (a retarget): the ramp-out keeps the rest-based timing. The ramp-in from the
+  current state uses the shortest duration within the limits (the `min_jerk_duration`
+  search, best effort). p, v and a stay continuous at every joint; jerk jumps, as at a
+  retarget.
+- Waypoint paths do not cruise yet (see the roadmap).
+
 ## Step generation
 
 Position steps happen where the planned position crosses `pos ± 0.5`.

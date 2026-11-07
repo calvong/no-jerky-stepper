@@ -1,6 +1,6 @@
 // Dump the step stream of a scenario as CSV, for python/plot_steps.py.
 //
-//   dump_steps <move|retarget|path|reverse> > steps.csv
+//   dump_steps <move|retarget|path|reverse|cruise> > steps.csv
 //
 // Rows:
 //   ideal,t,p,v,a   planned trajectory sampled every 1 ms
@@ -117,8 +117,18 @@ int main(int argc, char** argv)
         w[1].duration = 0.5;
         ax.follow_path(w, 2, PathOptions{ViaPolicy::Heuristic});
         capture(ax.trajectory());
+    } else if (std::strcmp(scenario, "cruise") == 0) {
+        // Ramp to v_max, cruise, ramp down; then a retarget during the cruise.
+        Cruise c;
+        c.mode = CruiseMode::Auto;
+        ax.set_cruise(c);
+        ax.move_to(60000, 0.0);
+        capture(ax.trajectory());
+        run_until(ax, st, 1.5);
+        ax.move_to(45000, 0.0);
+        capture(ax.trajectory());
     } else {
-        std::fprintf(stderr, "unknown scenario '%s' (move|retarget|path|reverse)\n", scenario);
+        std::fprintf(stderr, "unknown scenario '%s' (move|retarget|path|reverse|cruise)\n", scenario);
         return 2;
     }
     run_until(ax, st, 1e4);

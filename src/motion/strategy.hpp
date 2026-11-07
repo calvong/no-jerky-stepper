@@ -16,20 +16,22 @@ public:
     virtual ~MotionStrategy() = default;
 
     /// Plan a move from `from` to rest at `target`. duration <= 0 lets the strategy choose
-    /// one from `lim`. Writes up to `max_out` segments to `out`, count to `*n_out`.
+    /// one from `lim`. `cruise` asks for a constant-velocity phase on long moves (a strategy
+    /// without one may ignore it). Writes up to `max_out` segments to `out`, count to `*n_out`.
     virtual Status plan_move(const State& from, double target, double duration, const Limits& lim,
-                             PolySegment* out, int max_out, int* n_out) const = 0;
+                             const Cruise& cruise, PolySegment* out, int max_out, int* n_out) const = 0;
 
     /// Plan a smooth stop (to v = a = 0, end position free) from `from`.
     virtual Status plan_stop(const State& from, double duration, const Limits& lim,
                              PolySegment* out, int max_out, int* n_out) const = 0;
 };
 
-/// The core strategy: one quintic per move, one quartic per stop.
+/// The core strategy: one quintic per move (or ramp + cruise + ramp, see motion/cruise.hpp),
+/// one quartic per stop.
 class MinJerkStrategy final : public MotionStrategy {
 public:
     Status plan_move(const State& from, double target, double duration, const Limits& lim,
-                     PolySegment* out, int max_out, int* n_out) const override;
+                     const Cruise& cruise, PolySegment* out, int max_out, int* n_out) const override;
     Status plan_stop(const State& from, double duration, const Limits& lim,
                      PolySegment* out, int max_out, int* n_out) const override;
 };
