@@ -1,3 +1,13 @@
-version: "0.1.0"
-description: "A library for smooth stepper motor motion control using minimum jerk trajectory"
-url: "https://github.com/calvong/no-jerky-stepper.git"
+version: "0.2.0"
+description: "Streaming minimum-jerk stepper motion control for ESP32 (RMT based)"
+url: "https://github.com/calvong/no-jerky-stepper"
+targets:
+  - esp32s3
+dependencies:
+  idf: ">=5.3"
+files:
+  exclude:
+    - "python/**"
+    - "test/**"
+    - "doc/latex/**"
+    - "**/build/**"

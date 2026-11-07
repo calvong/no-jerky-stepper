@@ -1,0 +1,93 @@
+menu "No Jerky Stepper"
+
+    config NJ_RMT_RESOLUTION_HZ
+        int "RMT tick resolution (Hz)"
+        default 10000000
+        range 1000000 40000000
+        help
+            Master clock of the step generator. All step times are integer ticks of this
+            clock, accumulated in absolute time so rounding never drifts.
+
+    config NJ_RMT_MEM_BLOCKS
+        int "RMT memory blocks per channel"
+        default 1
+        range 1 2
+        help
+            Each block holds 48 symbols on the ESP32-S3. More blocks mean fewer refill
+            interrupts but fewer usable channels. Also sets the DIR-change drain length.
+
+    config NJ_SLICE_US
+        int "Step generator slice length (us)"
+        default 1000
+        range 250 5000
+        help
+            The trajectory is sampled once per slice. Inside a slice, steps are spaced
+            uniformly between the exact first and last step-crossing times.
+
+    config NJ_LOOKAHEAD_MS
+        int "Look-ahead / commit horizon (ms)"
+        default 20
+        range 5 200
+        help
+            How far ahead of playback the planner fills the step queue. This is also the
+            latency of a runtime retarget.
+
+    config NJ_STEP_QUEUE_LEN_LOG2
+        int "Step command queue length (log2)"
+        default 7
+        range 5 10
+
+    config NJ_SEGMENT_POOL
+        int "Trajectory segments per axis"
+        default 40
+        range 8 256
+
+    config NJ_PATH_CAPACITY
+        int "Pending waypoints per axis"
+        default 32
+        range 2 250
+        help
+            Must be smaller than NJ_SEGMENT_POOL.
+
+    config NJ_MAX_STEP_RATE_HZ
+        int "Maximum step rate (Hz)"
+        default 100000
+        range 1000 250000
+
+    config NJ_FILLER_SYMBOL_US
+        int "Minimum filler symbol length (us)"
+        default 10
+        range 2 100
+        help
+            Minimum duration of each low-only symbol used to drain the RMT buffer before a
+            DIR change. Keeps the refill interrupt rate bounded.
+
+    config NJ_UNDERRUN_FILL_US
+        int "Underrun filler length (us)"
+        default 100
+        range 10 10000
+
+    config NJ_REVERSAL_HYSTERESIS_PCT
+        int "Reversal hysteresis (% of a step)"
+        default 50
+        range 0 100
+        help
+            A direction reversal is only stepped once the trajectory has moved back by
+            0.5 + hysteresis steps. Prevents forward/back dithering at turnaround points.
+
+    config NJ_PLANNER_TASK_PRIORITY
+        int "Planner task priority"
+        default 20
+        range 1 24
+
+    config NJ_PLANNER_TASK_CORE
+        int "Planner task core (-1 = any)"
+        default 1
+        range -1 1
+
+    config NJ_PLANNER_TASK_STACK
+        int "Planner task stack size"
+        default 6144
+        range 3072 32768
+
+endmenu
