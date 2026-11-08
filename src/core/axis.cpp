@@ -32,6 +32,7 @@ void Axis::configure(const AxisConfig& c)
     gen_.configure(cfg_.gen);
     gen_.reset(0, 0, true);
     traj_.reset(0.0, 0.0);
+    offset_.reset(0.0, 0.0);
     path_n_ = 0;
 }
 
@@ -48,10 +49,11 @@ bool Axis::can_append(int segments, int64_t at_tick) const
 
 bool Axis::has_motion() const
 {
-    if (!traj_.holding_at(gen_.scan_time())) {
+    const TrajView v = view();
+    if (!v.holding_at(gen_.scan_time())) {
         return true;
     }
-    return gen_.position() != std::llround(traj_.end_state().p);
+    return gen_.position() != std::llround(v.end_state().p);
 }
 
 Status Axis::splice(int64_t at_tick, const PolySegment* segs, int n)
@@ -123,7 +125,41 @@ void Axis::halt(int64_t position, bool dir_positive)
 {
     path_n_ = 0;
     traj_.reset(gen_.scan_time(), static_cast<double>(position));
+    offset_.reset(gen_.scan_time(), 0.0);
     gen_.reset(gen_.scan_tick(), position, dir_positive);
+}
+
+Status Axis::set_offset(double target, double duration, int64_t at_tick)
+{
+    if (!std::isfinite(target) || !(duration >= 0.0)) {
+        return Status::InvalidArg;
+    }
+    const double t = gen_.to_time(resolve_tick(at_tick));
+    const State s0 = offset_.eval(t);
+    if (offset_.holding_at(t) && s0.p == target) {
+        return Status::Ok;
+    }
+    if (offset_.count_before(t) + 1 > Trajectory::kCapacity) {
+        return Status::NoMem;
+    }
+    const PolySegment seg = min_jerk(s0, State{target, 0.0, 0.0}, std::max(duration, kMinSegmentDuration));
+    offset_.truncate(t);
+    offset_.append(seg, -1);
+    return Status::Ok;
+}
+
+int64_t Axis::absorb_offset()
+{
+    if (has_motion()) {
+        return 0;
+    }
+    const int64_t pos = gen_.position();
+    const int64_t shift = pos - std::llround(traj_.end_state().p);
+    offset_.reset(gen_.scan_time(), 0.0);
+    if (shift != 0) {
+        gen_.reset(gen_.scan_tick(), pos - shift, gen_.dir_positive());
+    }
+    return shift;
 }
 
 Status Axis::set_position(int64_t position)
@@ -139,6 +175,7 @@ void Axis::rebase(int64_t tick)
 {
     gen_.rebase(tick);
     traj_.truncate(gen_.scan_time());
+    offset_.truncate(gen_.scan_time());
 }
 
 Status Axis::follow_path(const Waypoint* wps, int n, const PathOptions& opts, int64_t at_tick)
@@ -268,7 +305,8 @@ void Axis::pop_passed(int32_t tag)
 
 StepGenerator::Result Axis::generate(StepStream& out, int64_t until_tick, bool keep_alive)
 {
-    const StepGenerator::Result r = gen_.run(traj_, until_tick, out, keep_alive);
+    const StepGenerator::Result r = gen_.run(view(), until_tick, out, keep_alive);
+    offset_.discard_before(gen_.scan_time());
     const int32_t tag = traj_.discard_before(gen_.scan_time());
     if (tag >= 0) {
         pop_passed(tag);

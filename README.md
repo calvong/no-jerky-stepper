@@ -25,6 +25,10 @@ RMT v2 driver.
   manager, shared timing, straight-line coordinated moves and coordinated paths.
 - **Exact step timing**: integer ticks of a 10 MHz clock accumulated in absolute time (no
   drift), exact crossing times at low speed, and safe DIR changes inside the RMT stream.
+- **Closed-loop feedback** (optional): an absolute (SoftPot, rangefinder) or incremental
+  (quadrature encoder) sensor corrects lost steps with smooth min-jerk corrections,
+  continuously and/or in a settle phase at the end of a move. The sensor interface is
+  generic, SimpleFOC-style.
 - **Strategy interface**: segments are generic polynomials, so time-optimal / S-curve /
   trapezoid strategies can be added later without touching the step generator or driver.
 
@@ -53,7 +57,7 @@ extern "C" void app_main()
 }
 ```
 
-More in [examples/](examples): `single_axis`, `waypoints`, `multi_axis`.
+More in [examples/](examples): `single_axis`, `waypoints`, `multi_axis`, `feedback`.
 
 To use the component in your project, add it to `EXTRA_COMPONENT_DIRS` (as the examples
 do) or put it in your project's `components/` folder, then add `REQUIRES no-jerky-stepper`.
@@ -71,6 +75,7 @@ Requirements: ESP-IDF ≥ 5.3 (`rmt_new_simple_encoder`), target ESP32-S3.
 | `stop(Smooth \| Immediate, T=0)` | Decelerate to rest, or cut pulses now |
 | `position()`, `commandedState()`, `isMoving()`, `waitUntilIdle()`, `stats()` | Queries |
 | `Group::create(members, n, &g)` → `moveTo(targets)`, `followPath(...)`, `stop()` | Coordinated axes |
+| `attachSensor(sensor, cfg)`, `calibrateSensor()`, `setFeedbackMode()`, `feedbackStatus()`, `waitUntilSettled()` | Closed-loop feedback |
 
 Durations are counted from the call. When a duration is 0, the shortest one within
 `Limits` is used. Limits are not enforced on durations you give explicitly. If a
@@ -99,6 +104,75 @@ move. Otherwise it is the usual single quintic. In v-bound moves, cruising saves
 the time (`1.875·D/v_max` becomes about `D/v_max`). With an explicit duration, the cruise
 splits the time instead of changing it. `Group::setCruise` / `Group::moveTo(targets, T, c)`
 do the same for coordinated straight-line moves. Waypoint paths do not cruise yet.
+
+### Closed-loop feedback
+
+A stepper normally needs no feedback, but a sensor catches lost steps, belt stretch and
+backlash. A sensor is a class with three calls, like in SimpleFOC:
+
+```cpp
+class MySensor : public nj::PositionSensor {
+public:
+    bool init() override;               // once, from attachSensor()
+    bool update() override;             // take a reading; false = no valid reading
+    double getPosition() const override; // last reading, in sensor units (mm, counts, ...)
+    nj::SampleContext context() const override { return nj::SampleContext::Planner; }  // fast reads
+};
+```
+
+`IncrementalSensor` handles counters that wrap (implement `readRaw()` and `rawRange()`).
+`CallbackSensor` wraps a plain function.
+
+```cpp
+nj::FeedbackConfig fc;
+fc.mode = nj::FeedbackMode::ContinuousAndSettle;
+fc.steps_per_unit = 80;          // measured steps = reading * steps_per_unit + offset_steps
+m->attachSensor(&sensor, fc);
+m->calibrateSensor();            // reading at this position == current step count
+m->moveTo(4000);
+m->waitUntilSettled();           // motion + settle phase; ESP_FAIL on a feedback fault
+```
+
+| Mode | What it does |
+|---|---|
+| `Settle` | after the move: wait, average `settle_samples` readings, correct, repeat until within `settle_tolerance_steps` |
+| `Continuous` | the correction follows the filtered slip (commanded − measured) all the time, outside a deadband |
+| `ContinuousAndSettle` | continuous while moving, then one settle phase |
+
+How it works:
+- Corrections are an offset added on top of the plan with min-jerk segments, so they are
+  as smooth as a retarget. Moves, paths and retargets are not affected.
+- Each reading is compared with the position commanded *when the reading was taken*
+  (`sensor_latency_ms` sets the reading's age), so a slow sensor does not cause
+  overshoot.
+- Once idle, the correction is folded into the step counter, so `position()` matches the
+  target again.
+
+What to expect:
+- **Speed:** a correction takes effect after `NJ_LOOKAHEAD_MS` (20 ms) plus the sensor's
+  delay. The 20 ms is the planner's software step queue (a jitter margin), not the RMT
+  write, and DMA would not shorten it. With fast sensors (SoftPot on the ADC, an encoder on
+  PCNT), you can lower the look-ahead to 5–10 ms. Watch `stats().underruns` if you do. The
+  default `filter_tau_s` / `correction_time_s` suit noisy rangefinders; lower them for
+  clean sensors. See "Latency budget" in [doc/architecture.md](doc/architecture.md).
+- **Not a PID:** feedback estimates the lost steps and adds them back (a disturbance
+  observer). There are no gains to tune and nothing to oscillate.
+- **Noise:** the ESP32-S3 ADC gives about 9–10 usable bits and is nonlinear near the rails.
+  Oversample, set `filter_tau_s` and `deadband_steps`, and use the middle of the strip.
+- **SoftPot:** the output floats when it is not pressed. Wire a pull-down and return `false`
+  from `update()` below a threshold. In `Settle` mode a sensor without readings is only an
+  error while settling. In continuous modes, `sensor_timeout_ms` turns missing readings into
+  a fault.
+- **Incremental sensors** start unreferenced. Feedback does nothing until `calibrateSensor()`
+  or `setPosition()`.
+- **Faults:** too much slip (stall), a jump, a timeout or a failed settle freeze the
+  corrections and, with `stop_on_fault`, stop the motor smoothly. `setFeedbackMode()`
+  clears them.
+- **Groups:** any member of a `Group` can have a sensor, and a group can mix closed- and
+  open-loop members (e.g. X with a SoftPot, Y without). Each correction puts that member's
+  real position back on the planned line, so the others need nothing. A fault on any member
+  stops the whole group smoothly. `Group::isMoving()` / `waitUntilSettled()` include the
+  members' settle phases.
 
 ## How it works (short)
 

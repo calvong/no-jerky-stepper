@@ -6,6 +6,10 @@
 // that time becomes the start of the new plan, so position, velocity and acceleration stay
 // continuous through every retarget.
 //
+// A second, normally zero, *offset track* is added on top of the plan (closed-loop feedback
+// corrections, see core/feedback.hpp). It is spliced the same way, so corrections are C2-smooth
+// too, and it never touches the planned trajectory, its waypoints or their arrival times.
+//
 // Not thread-safe: the platform glue serialises access (planner mutex).
 #pragma once
 
@@ -54,6 +58,18 @@ public:
     void halt(int64_t position, bool dir_positive);
     Status set_position(int64_t position);
 
+    // ---- offset track (feedback corrections) ----
+    /// Smoothly move the offset to `target` [steps] over `duration` (min-jerk from the offset's
+    /// own state at the commit horizon, ending at rest).
+    Status set_offset(double target, double duration, int64_t at_tick = -1);
+    /// Final value of the offset track.
+    double offset_target() const { return offset_.end_state().p; }
+    /// Offset at the commit horizon.
+    State offset_state() const { return offset_.eval(gen_.scan_time()); }
+    /// Idle only: fold the offset into the step counter so that the counter matches the
+    /// planned end position again. Returns the shift (new counter = old - shift); 0 if moving.
+    int64_t absorb_offset();
+
     // ---- generation ----
     StepGenerator::Result generate(StepStream& out, int64_t until_tick, bool keep_alive);
     /// Move the time base of an idle axis forward (group alignment).
@@ -61,14 +77,19 @@ public:
 
     // ---- queries ----
     bool has_motion() const;
-    State commanded() const { return traj_.eval(gen_.scan_time()); }
-    State state_at(int64_t tick) const { return traj_.eval(gen_.to_time(tick)); }
+    /// True while the planned trajectory (not the offset track) still moves.
+    bool has_planned_motion() const { return !traj_.holding_at(gen_.scan_time()); }
+    /// Commanded state (plan + offset) at the commit horizon.
+    State commanded() const { return view().eval(gen_.scan_time()); }
+    State state_at(int64_t tick) const { return view().eval(gen_.to_time(tick)); }
     int64_t commit_tick() const { return gen_.scan_tick(); }
     double target() const { return traj_.end_state().p; }
     int pending_waypoints() const { return path_n_; }
     bool can_append(int segments, int64_t at_tick) const;
 
     const Trajectory& trajectory() const { return traj_; }
+    const Trajectory& offset_track() const { return offset_; }
+    TrajView view() const { return TrajView(traj_, &offset_); }
     const StepGenerator& generator() const { return gen_; }
     StepGenerator& generator() { return gen_; }
 
@@ -92,6 +113,7 @@ private:
     AxisConfig cfg_;
     const MotionStrategy* strategy_ = nullptr;
     Trajectory traj_;
+    Trajectory offset_;
     StepGenerator gen_;
     Pending path_[cfg::kPathCapacity];
     Pending backup_[cfg::kPathCapacity];

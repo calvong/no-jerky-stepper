@@ -2,7 +2,9 @@
 #pragma once
 
 #include "core/axis.hpp"
+#include "core/feedback.hpp"
 #include "driver/rmt_tx.h"
+#include "nj/sensor.hpp"
 #include "nj/stepper.hpp"
 #include "platform/esp32/rmt_step_channel.hpp"
 
@@ -15,6 +17,10 @@ struct StepperImpl {
     Axis axis;
     RmtStepChannel channel;
     GroupImpl* group = nullptr;
+    // Closed-loop feedback (optional).
+    PositionSensor* sensor = nullptr;
+    Feedback fb;
+    int64_t next_sample_us = 0;  ///< FeedbackTask sensors: next update() time
 };
 
 struct GroupImpl {

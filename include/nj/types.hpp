@@ -86,6 +86,72 @@ struct GroupWaypoint {
     double duration = 0.0;  ///< [s]; 0 = from limits (slowest axis decides)
 };
 
+// ---------------------------------------------------------------------------------------------
+// Closed-loop position feedback (see nj/sensor.hpp and Stepper::attachSensor)
+
+/// Absolute sensors report a position in a fixed frame (SoftPot, rangefinder, absolute
+/// encoder). Incremental sensors count from an arbitrary start (quadrature encoder) and need a
+/// reference (calibrateSensor() or setPosition()) before feedback becomes active.
+enum class SensorKind : uint8_t { Absolute, Incremental };
+
+/// Where the library calls PositionSensor::update().
+enum class SampleContext : uint8_t {
+    FeedbackTask,  ///< may block (I2C, slow ADC): runs in the low-priority nj_feedback task
+    Planner,       ///< fast, non-blocking (PCNT register, cached ADC/DMA value): planner task
+};
+
+enum class FeedbackMode : uint8_t {
+    Off,
+    Settle,               ///< correct the residual error once a move has ended
+    Continuous,           ///< correct slip continuously, during motion and at rest
+    ContinuousAndSettle,  ///< continuous during motion, plus a settle phase at the end
+};
+
+/// Feedback tuning. Positions in steps, times in seconds unless the name says otherwise.
+struct FeedbackConfig {
+    FeedbackMode mode = FeedbackMode::Settle;
+    /// measured [steps] = sensor reading [sensor units] * steps_per_unit + offset_steps
+    double steps_per_unit = 1.0;
+    double offset_steps = 0.0;
+    uint32_t sample_period_ms = 10;  ///< FeedbackTask sensors (Planner ones: every planner service)
+    double sensor_latency_ms = 0.0;  ///< age of a reading when update() returns (filter delay, ToF integration)
+    double filter_tau_s = 0.05;      ///< low-pass time constant of the slip estimate
+    double deadband_steps = 2.0;     ///< continuous mode: ignore changes of the slip smaller than this
+    double correction_time_s = 0.15; ///< minimum duration of one correction (longer if the limits require)
+    double max_correction_steps = 200.0;  ///< |slip| above this is a fault (stall, sensor glitch); 0 = off
+    double max_jump_steps = 0.0;     ///< slip change between two samples above this is a fault; 0 = off
+    uint32_t sensor_timeout_ms = 200;  ///< no valid sample for this long is a fault; 0 = off
+    bool stop_on_fault = true;       ///< smooth stop when a fault is raised
+    // Settle phase
+    double settle_tolerance_steps = 1.0;
+    uint32_t settle_delay_ms = 50;  ///< wait after the motion ends before measuring
+    uint8_t settle_samples = 8;     ///< samples averaged per settle measurement
+    uint8_t settle_max_attempts = 3;
+};
+
+enum class FeedbackState : uint8_t {
+    Off,
+    Unreferenced,  ///< incremental sensor without a reference: no corrections yet
+    Tracking,      ///< estimating (and in continuous modes correcting) slip
+    Settling,      ///< settle phase in progress
+    Settled,       ///< settle phase finished within tolerance
+    Fault,         ///< corrections frozen; cleared by setFeedbackMode() / calibrateSensor()
+};
+
+enum class FeedbackFault : uint8_t { None, Timeout, SlipTooLarge, Jump, SettleFailed };
+
+struct FeedbackStatus {
+    FeedbackState state = FeedbackState::Off;
+    FeedbackFault fault = FeedbackFault::None;
+    double measured = 0.0;  ///< last measured position [steps]
+    double slip = 0.0;      ///< filtered commanded - measured [steps] (lost steps, compliance)
+    double offset = 0.0;    ///< correction currently applied on top of the plan [steps]
+    uint32_t samples = 0;   ///< valid samples used
+    uint32_t rejected = 0;  ///< samples dropped (too old for the history, or unreferenced)
+    uint32_t faults = 0;
+    uint8_t settle_attempts = 0;
+};
+
 /// Runtime statistics of one axis.
 struct Stats {
     uint32_t underruns = 0;        ///< step queue ran empty while moving

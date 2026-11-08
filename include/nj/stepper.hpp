@@ -33,6 +33,7 @@ struct StepperConfig {
 
 struct StepperImpl;
 class Group;
+class PositionSensor;
 
 class Stepper {
 public:
@@ -62,19 +63,42 @@ public:
     /// Immediate: stop pulses now. On a group member this halts the whole group.
     esp_err_t stop(StopMode mode = StopMode::Smooth, float duration_s = 0.0f);
 
-    /// Redefine the current position (only while idle).
+    /// Redefine the current position (only while idle). With an absolute sensor the sensor
+    /// mapping follows the new frame; an incremental sensor is re-referenced to `position`.
     esp_err_t setPosition(int32_t position);
     esp_err_t setLimits(const Limits& limits);
     /// Cruise setting used by moveTo/move (ESP_ERR_INVALID_ARG if out of range).
     esp_err_t setCruise(const Cruise& cruise);
     esp_err_t enable(bool on);
 
-    /// Signed number of pulses emitted (leads the motor by at most one RMT buffer).
+    // ---- closed-loop feedback (see nj/sensor.hpp) ----
+    // Works on single steppers and on group members; a group may mix members with and without
+    // sensors. A fault on a member stops the whole group (smooth stop with shared timing).
+    /// Attach a position sensor (calls sensor->init()). The sensor must outlive the stepper or
+    /// be detached first. Incremental sensors stay inactive until calibrateSensor() or
+    /// setPosition() gives them a reference.
+    esp_err_t attachSensor(PositionSensor* sensor, const FeedbackConfig& config);
+    esp_err_t detachSensor();
+    /// Change the feedback mode; also clears a fault.
+    esp_err_t setFeedbackMode(FeedbackMode mode);
+    /// Idle only: map the next sensor reading to the current position (sets the reference /
+    /// offset_steps) and clear a fault. Waits up to `timeout` for that reading.
+    esp_err_t calibrateSensor(TickType_t timeout = pdMS_TO_TICKS(500));
+    FeedbackStatus feedbackStatus() const;
+    /// Last measured position [steps].
+    double measuredPosition() const;
+    /// Wait until the motion and any settle phase are finished. ESP_FAIL if feedback ended in
+    /// a fault.
+    esp_err_t waitUntilSettled(TickType_t timeout = portMAX_DELAY) const;
+
+    /// Signed number of pulses emitted (leads the motor by at most one RMT buffer). With
+    /// feedback, corrections are folded into this counter once idle, so it follows the plan.
     int32_t position() const;
     /// Final position of the current plan.
     int32_t targetPosition() const;
     /// Planned state at the commit horizon.
     State commandedState() const;
+    /// Also true during a feedback settle phase.
     bool isMoving() const;
     esp_err_t waitUntilIdle(TickType_t timeout = portMAX_DELAY) const;
     Stats stats() const;

@@ -61,4 +61,41 @@ private:
     State end_;
 };
 
+/// Read-only sum of the planned trajectory and an optional offset track (feedback
+/// corrections). This is what the step generator samples. Implicitly constructible from a
+/// Trajectory, so code without an offset track is unchanged.
+class TrajView {
+public:
+    TrajView(const Trajectory& main, const Trajectory* offset = nullptr) : m_(main), o_(offset) {}  // NOLINT
+
+    State eval(double t) const
+    {
+        State s = m_.eval(t);
+        if (o_) {
+            const State d = o_->eval(t);
+            s.p += d.p;
+            s.v += d.v;
+            s.a += d.a;
+        }
+        return s;
+    }
+    double p(double t) const { return o_ ? m_.p(t) + o_->p(t) : m_.p(t); }
+    bool holding_at(double t) const { return m_.holding_at(t) && (!o_ || o_->holding_at(t)); }
+    State end_state() const
+    {
+        State s = m_.end_state();
+        if (o_) {
+            const State d = o_->end_state();
+            s.p += d.p;
+            s.v += d.v;
+            s.a += d.a;
+        }
+        return s;
+    }
+
+private:
+    const Trajectory& m_;
+    const Trajectory* o_;
+};
+
 }  // namespace nj

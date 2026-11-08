@@ -90,4 +90,23 @@ menu "No Jerky Stepper"
         default 6144
         range 3072 32768
 
+    config NJ_FEEDBACK_TASK_PRIORITY
+        int "Feedback sensor task priority"
+        default 5
+        range 1 24
+        help
+            Priority of the task that calls update() on blocking feedback sensors (I2C, slow
+            ADC). Keep it below the planner task so a slow read never delays step generation.
+            Created only when such a sensor is attached.
+
+    config NJ_FEEDBACK_TASK_CORE
+        int "Feedback sensor task core (-1 = any)"
+        default -1
+        range -1 1
+
+    config NJ_FEEDBACK_TASK_STACK
+        int "Feedback sensor task stack size"
+        default 4096
+        range 2048 32768
+
 endmenu

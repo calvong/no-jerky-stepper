@@ -7,6 +7,8 @@
 | Public API | `include/nj/*.hpp`, `src/stepper.cpp`, `src/group.cpp` | caller task | yes |
 | Planner task + RMT glue | `src/platform/esp32/*` | planner task, RMT ISR | yes |
 | Axis / group planning | `src/core/axis.*`, `src/core/group_planner.*` | planner lock | no |
+| Feedback (slip estimate, correction control) | `src/core/feedback.*`, `src/core/sensor.cpp`, `include/nj/sensor.hpp` | planner lock | no |
+| Blocking sensor sampling | `PlannerTask::sample_blocking_sensors` | `nj_feedback` task | yes |
 | Motion maths | `src/motion/*` (PolySegment, min-jerk, paths, strategy) | planner lock | no |
 | Step generation | `src/stepgen/step_generator.*` | planner task | no |
 | Symbol encoding | `src/stepgen/step_encoder.*` | RMT ISR | no |
@@ -146,6 +148,34 @@ are continuous; jerk may jump, as min-jerk segments allow. Latency equals the lo
 (20 ms by default). API durations are measured from the call, and the glue subtracts the
 lead.
 
+### Latency budget
+
+How long after a plan change (retarget, or a feedback reading) the motor reacts:
+
+| Stage | Typical | Set by |
+|---|---|---|
+| Sensor read | µs (SoftPot on ADC, encoder on PCNT); 20–50 ms for ToF rangefinders | the sensor |
+| Wait for the next planner service | 0–5 ms (wakes every look-ahead / 4) | `NJ_LOOKAHEAD_MS` |
+| Software step queue (`StepStream` ring) | about `NJ_LOOKAHEAD_MS`, 20 ms | `NJ_LOOKAHEAD_MS` |
+| RMT hardware memory (ping-pong, 48 symbols per block) | a few ms or less | `NJ_RMT_MEM_BLOCKS`, step rate |
+| Feedback filter and correction move | `filter_tau_s` + `correction_time_s` (50 + 150 ms by default) | `FeedbackConfig` |
+
+- **The software queue is most of the fixed delay**, not the RMT write. It is a deliberate
+  margin: the planner is a FreeRTOS task, and the queue must cover scheduling jitter
+  (Wi-Fi interrupts, other tasks, long planning calls) without an underrun. Plan changes
+  never touch queued commands, so they start behind it.
+- **DMA does not help here.** RMT TX DMA streams large buffers with fewer interrupts, but
+  what is in a DMA buffer is committed, so it adds latency instead of removing it. On the
+  ESP32-S3 only one TX channel supports DMA. It would only matter if the refill ISR load at
+  very high step rates became a problem.
+- **To react faster today:** lower `NJ_LOOKAHEAD_MS` (5–10 ms) and watch `stats().underruns`
+  under the real load; for clean, fast sensors also lower `filter_tau_s` and
+  `correction_time_s` (the defaults suit noisy rangefinders).
+- **Planned: rewritable queue.** Only what the encoder has copied into RMT memory is truly
+  committed. A plan change could cut the software queue just after that point and
+  regenerate from there, giving a latency of a few ms while keeping the full margin for
+  normal streaming (see the roadmap).
+
 Paths keep the schedule of waypoints that are already planned when more are appended. A
 waypoint arriving within 100 ms of the commit horizon is frozen, so a late append cannot
 force a violent correction.
@@ -169,12 +199,62 @@ v/a become identity rows.
   transaction and in lock-step.
 - If some members finish their transaction before others (motion ended), the group waits
   until all have stopped before restarting them together.
-- An immediate stop of one member halts the whole group.
+- An immediate stop of one member halts the whole group. A feedback fault on one member
+  smoothly stops the whole group.
+
+## Closed-loop feedback
+
+An optional position sensor (`nj::PositionSensor`, SimpleFOC-style `init` / `update` /
+`getPosition`) closes the loop on a single stepper.
+
+- **Offset track.** Corrections are a second trajectory on the `Axis` that the step generator
+  adds to the plan (`TrajView`). It is spliced at the commit horizon like any retarget,
+  using min-jerk segments that start from the offset's own (p, v, a), so corrections are
+  C2-smooth. The plan itself, its waypoints, tags and arrival times are untouched.
+- **Slip.** `slip = commanded(t_sample) − measured(t_sample)`: steps that were commanded
+  but did not show up. The commanded position includes the offset, so the slip does not
+  depend on the correction already applied. A delayed sample therefore never double-counts,
+  and there is no loop gain to tune or oscillate. This is a disturbance observer (estimate
+  the lost steps, add them back), not a PID: the step stream already sets the position, so
+  there is no plant to stabilise, and the filter time constant alone sets the response.
+- **Timing.** Each planner cycle records (when the commit horizon will be played, the
+  commanded position there) in a 64-entry history. A sample at `t − sensor_latency` is
+  compared with the interpolated history value. Corrections act after the look-ahead
+  (`NJ_LOOKAHEAD_MS`) plus the sensor delay (see "Latency budget").
+- **Estimator.** `SlipEstimator` interface. v1 is a first-order low-pass. A Kalman filter
+  that uses the commanded trajectory as its process model is the planned upgrade.
+- **Modes.** Continuous: the offset target follows the filtered slip outside a deadband.
+  Settle: after the plan has ended and the stream has drained, wait, average N samples,
+  correct the mean, and repeat up to `settle_max_attempts`. ContinuousAndSettle: continuous
+  while the plan moves, then one settle phase.
+- **Absorb.** Once idle (and not settling), the offset is folded into the step counter
+  (`Axis::absorb_offset`, then the encoder counter is resynced). `position()` then equals the
+  plan's end position again.
+- **Faults.** Slip above `max_correction_steps` (stall or glitch), a slip jump above
+  `max_jump_steps`, no sample for `sensor_timeout_ms` (checked only while corrections rely
+  on samples), or a failed settle. Corrections then freeze and, with `stop_on_fault`, a
+  smooth stop is issued. `setFeedbackMode()` or `calibrateSensor()` clears the fault.
+- **Sampling.** `SampleContext::Planner` sensors (PCNT, cached ADC values) are read at the
+  start of each planner service. `FeedbackTask` sensors (I2C, slow ADC) are read in the
+  low-priority `nj_feedback` task, outside the planner lock, so a blocking read cannot delay
+  step generation. Lock order: the feedback mutex first, then the planner mutex.
+- **References.** Absolute sensors are referenced by `offset_steps`. Incremental sensors
+  start unreferenced. `calibrateSensor()` (and, for incremental sensors, `setPosition()`)
+  maps the next sample to the commanded position. `setPosition()` on an absolute sensor
+  shifts the mapping along with the step frame.
+- Groups. Members may have sensors in any mix. `service_group` runs each member's feedback
+  before filling. Corrections stay per member: slip is measured against the member's own
+  commanded position, so correcting it moves the real position back onto the coordinated
+  line (only the correction transient deviates). While the group is fully at rest, the
+  members' time bases are re-aligned (`group_align`) each service, so a settle correction
+  on one member restarts all channels in step (idle members stream pauses) and a later
+  group move still plans at one common tick. Absorbing waits until every channel of the
+  group has stopped. A fault requesting a stop issues `group_stop()` on all members.
 
 ## Memory and CPU (defaults)
 
-- Per axis: about 14 KB (40-segment trajectory, 32-waypoint path, solver scratch) plus a
-  1 KB step queue.
+- Per axis: about 17 KB (40-segment trajectory and offset track, 32-waypoint path, solver
+  scratch, feedback history) plus a 1 KB step queue.
 - Planner task: 6 KB stack, priority 20, core 1.
 - ISR rate: one refill per 24 symbols. A symbol is one step (≥ 10 µs at 100 kHz) or one
   filler (≥ 10 µs), so the worst case is about 4 kHz per channel.
@@ -182,6 +262,7 @@ v/a become identity rows.
 ## Known limitations
 
 - `position()` counts pulses when they are *encoded*: up to 48 symbols ahead of the
-  motor. A PCNT loop-back for exact position is on the roadmap.
+  motor. A PCNT loop-back for exact position is on the roadmap. (A feedback sensor measures
+  the real position: `measuredPosition()`.)
 - An immediate stop cuts pulses abruptly, so a fast motor may lose steps.
 - The RMT layer has not been verified on hardware yet (QEMU has no RMT model).

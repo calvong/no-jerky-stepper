@@ -15,5 +15,6 @@ int nj_run_all_tests()
     nj_test_path();
     nj_test_group();
     nj_test_cruise();
+    nj_test_feedback();
     return UNITY_END();
 }

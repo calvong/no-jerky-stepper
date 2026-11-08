@@ -79,10 +79,13 @@ esp_err_t Stepper::create(const StepperConfig& config, Stepper** out)
 Stepper::~Stepper()
 {
     PlannerTask& planner = PlannerTask::get();
+    planner.fb_lock();  // the feedback task may be inside this stepper's sensor update()
     planner.lock();
     impl_->channel.halt();
+    impl_->sensor = nullptr;
     planner.unlock();
     planner.remove(impl_);
+    planner.fb_unlock();
     delete impl_;
 }
 
@@ -196,14 +199,126 @@ esp_err_t Stepper::stop(StopMode mode, float duration_s)
 esp_err_t Stepper::setPosition(int32_t position)
 {
     PlannerLock lk;
-    if (PlannerTask::get().busy_locked(impl_)) {
+    if (PlannerTask::get().busy_locked(impl_) || impl_->fb.settling()) {
         return ESP_ERR_INVALID_STATE;
     }
+    const int64_t old = impl_->axis.generator().position();
     const Status st = impl_->axis.set_position(position);
     if (st == Status::Ok) {
         impl_->channel.encoder().set_position(position);
+        if (impl_->sensor) {
+            if (impl_->sensor->kind() == SensorKind::Incremental) {
+                impl_->fb.request_reference();
+            } else {
+                impl_->fb.reframe(static_cast<double>(position - old));
+            }
+        }
     }
     return to_esp_err(st);
+}
+
+namespace {
+
+bool feedback_config_valid(const FeedbackConfig& c)
+{
+    const auto nonneg = [](double x) { return std::isfinite(x) && x >= 0.0; };
+    return std::isfinite(c.steps_per_unit) && c.steps_per_unit != 0.0 && std::isfinite(c.offset_steps) &&
+           nonneg(c.sensor_latency_ms) && nonneg(c.filter_tau_s) && nonneg(c.deadband_steps) &&
+           nonneg(c.correction_time_s) && nonneg(c.max_correction_steps) && nonneg(c.max_jump_steps) &&
+           nonneg(c.settle_tolerance_steps) && c.mode <= FeedbackMode::ContinuousAndSettle;
+}
+
+}  // namespace
+
+esp_err_t Stepper::attachSensor(PositionSensor* sensor, const FeedbackConfig& config)
+{
+    ESP_RETURN_ON_FALSE(sensor, ESP_ERR_INVALID_ARG, TAG, "sensor is null");
+    ESP_RETURN_ON_FALSE(feedback_config_valid(config), ESP_ERR_INVALID_ARG, TAG, "invalid feedback config");
+    PlannerTask& planner = PlannerTask::get();
+    ESP_RETURN_ON_FALSE(sensor->init(), ESP_FAIL, TAG, "sensor init failed");
+    if (sensor->context() == SampleContext::FeedbackTask) {
+        ESP_RETURN_ON_ERROR(planner.ensure_feedback_task(), TAG, "feedback task");
+    }
+    planner.fb_lock();
+    {
+        PlannerLock lk;
+        impl_->sensor = sensor;
+        impl_->fb.configure(config, sensor->kind());
+        impl_->next_sample_us = 0;
+    }
+    planner.fb_unlock();
+    planner.wake();
+    return ESP_OK;
+}
+
+esp_err_t Stepper::detachSensor()
+{
+    PlannerTask& planner = PlannerTask::get();
+    planner.fb_lock();
+    {
+        PlannerLock lk;
+        impl_->sensor = nullptr;
+        impl_->fb.set_mode(FeedbackMode::Off);
+    }
+    planner.fb_unlock();
+    return ESP_OK;
+}
+
+esp_err_t Stepper::setFeedbackMode(FeedbackMode mode)
+{
+    ESP_RETURN_ON_FALSE(mode <= FeedbackMode::ContinuousAndSettle, ESP_ERR_INVALID_ARG, TAG, "invalid mode");
+    PlannerLock lk;
+    ESP_RETURN_ON_FALSE(impl_->sensor, ESP_ERR_INVALID_STATE, TAG, "no sensor attached");
+    impl_->fb.set_mode(mode);
+    return ESP_OK;
+}
+
+esp_err_t Stepper::calibrateSensor(TickType_t timeout)
+{
+    PlannerTask& planner = PlannerTask::get();
+    {
+        PlannerLock lk;
+        ESP_RETURN_ON_FALSE(impl_->sensor, ESP_ERR_INVALID_STATE, TAG, "no sensor attached");
+        ESP_RETURN_ON_FALSE(!planner.busy_locked(impl_) && !impl_->fb.settling(), ESP_ERR_INVALID_STATE, TAG,
+                            "stepper is moving");
+        impl_->fb.request_reference();
+    }
+    planner.wake();
+    const TickType_t start = xTaskGetTickCount();
+    for (;;) {
+        {
+            PlannerLock lk;
+            if (!impl_->fb.reference_pending()) {
+                return ESP_OK;
+            }
+        }
+        if (xTaskGetTickCount() - start >= timeout) {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(1);
+    }
+}
+
+FeedbackStatus Stepper::feedbackStatus() const
+{
+    PlannerLock lk;
+    return impl_->fb.status();
+}
+
+double Stepper::measuredPosition() const
+{
+    PlannerLock lk;
+    return impl_->fb.status().measured;
+}
+
+esp_err_t Stepper::waitUntilSettled(TickType_t timeout) const
+{
+    const esp_err_t err = waitUntilIdle(timeout);
+    if (err != ESP_OK) {
+        return err;
+    }
+    PlannerLock lk;
+    return impl_->fb.status().state == FeedbackState::Fault ? ESP_FAIL : ESP_OK;
 }
 
 esp_err_t Stepper::setLimits(const Limits& limits)
@@ -251,7 +366,7 @@ State Stepper::commandedState() const
 bool Stepper::isMoving() const
 {
     PlannerLock lk;
-    return PlannerTask::get().busy_locked(impl_);
+    return PlannerTask::get().busy_locked(impl_) || (impl_->sensor && impl_->fb.settling());
 }
 
 esp_err_t Stepper::waitUntilIdle(TickType_t timeout) const

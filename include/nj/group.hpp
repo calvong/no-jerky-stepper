@@ -4,6 +4,11 @@
 // always planned at the same commit tick with the same segment durations. A rest-to-rest
 // group move is a straight line in joint space. While any member moves, idle members stream
 // pauses so all channels stay in lock-step.
+//
+// Members may have feedback sensors (Stepper::attachSensor), any mix of closed- and open-loop
+// members. Corrections apply per member: they put that member's real position back on the
+// planned line, so the other members need no change. A settle correction after a move streams
+// all members again (idle ones send pauses). A feedback fault on any member stops the group.
 #pragma once
 
 #include <cstddef>
@@ -38,8 +43,11 @@ public:
     esp_err_t followPath(const GroupWaypoint* waypoints, size_t n, const PathOptions& options = {});
     esp_err_t stop(StopMode mode = StopMode::Smooth, float duration_s = 0.0f);
 
+    /// True while any member moves, streams, or (with a feedback sensor) is still settling.
     bool isMoving() const;
     esp_err_t waitUntilIdle(TickType_t timeout = portMAX_DELAY) const;
+    /// waitUntilIdle(), then ESP_FAIL if any member's feedback is in Fault.
+    esp_err_t waitUntilSettled(TickType_t timeout = portMAX_DELAY) const;
     size_t size() const;
 
 private:

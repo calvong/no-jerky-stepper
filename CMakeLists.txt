@@ -14,7 +14,9 @@ set(NJ_CORE_SRCS
     "src/stepgen/step_generator.cpp"
     "src/stepgen/step_encoder.cpp"
     "src/core/axis.cpp"
-    "src/core/group_planner.cpp")
+    "src/core/group_planner.cpp"
+    "src/core/feedback.cpp"
+    "src/core/sensor.cpp")
 
 set(NJ_ESP_SRCS
     "src/platform/esp32/rmt_step_channel.cpp"
@@ -26,6 +28,6 @@ idf_component_register(SRCS ${NJ_CORE_SRCS} ${NJ_ESP_SRCS}
                        INCLUDE_DIRS "include"
                        PRIV_INCLUDE_DIRS "src"
                        REQUIRES esp_driver_gpio
-                       PRIV_REQUIRES esp_driver_rmt)
+                       PRIV_REQUIRES esp_driver_rmt esp_timer)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra)

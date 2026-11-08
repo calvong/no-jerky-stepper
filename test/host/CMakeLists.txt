@@ -30,7 +30,9 @@ add_library(nj_core STATIC
     ${ROOT}/src/stepgen/step_generator.cpp
     ${ROOT}/src/stepgen/step_encoder.cpp
     ${ROOT}/src/core/axis.cpp
-    ${ROOT}/src/core/group_planner.cpp)
+    ${ROOT}/src/core/group_planner.cpp
+    ${ROOT}/src/core/feedback.cpp
+    ${ROOT}/src/core/sensor.cpp)
 target_include_directories(nj_core PUBLIC ${ROOT}/include ${ROOT}/src)
 if(NOT MSVC)
     target_compile_options(nj_core PRIVATE -Wall -Wextra)
@@ -46,7 +48,8 @@ add_executable(nj_tests
     ${UNIT}/test_retarget.cpp
     ${UNIT}/test_path.cpp
     ${UNIT}/test_group.cpp
-    ${UNIT}/test_cruise.cpp)
+    ${UNIT}/test_cruise.cpp
+    ${UNIT}/test_feedback.cpp)
 target_include_directories(nj_tests PRIVATE ${UNIT})
 target_link_libraries(nj_tests PRIVATE nj_core unity)
 

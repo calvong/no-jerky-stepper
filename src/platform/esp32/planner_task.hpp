@@ -40,16 +40,31 @@ public:
     /// Immediate stop of `s` (of its whole group if it has one).
     esp_err_t halt_locked(StepperImpl* s);
 
+    /// Start the low-priority task that samples blocking (FeedbackTask) sensors.
+    esp_err_t ensure_feedback_task();
+    /// Held while the feedback task calls a sensor's update(). Take it *before* the planner
+    /// lock when detaching a sensor or deleting a stepper. Never take it under the planner lock.
+    void fb_lock();
+    void fb_unlock();
+
 private:
     static void entry(void* arg);
+    static void feedback_entry(void* arg);
     void service();
     void service_single(StepperImpl* s);
     void service_group(GroupImpl* g);
+    /// Sample / correct one stepper's feedback. Returns true if a fault asks for a stop (the
+    /// caller stops the stepper alone, or its whole group).
+    bool service_feedback(StepperImpl* s);
+    void sample_blocking_sensors();
     void fill(StepperImpl* s, bool keep_alive);
     static bool group_all_running(const GroupImpl* g);
 
     SemaphoreHandle_t mutex_ = nullptr;
     StaticSemaphore_t mutex_buf_;
+    SemaphoreHandle_t fb_mutex_ = nullptr;
+    StaticSemaphore_t fb_mutex_buf_;
+    TaskHandle_t fb_task_ = nullptr;
     TaskHandle_t task_ = nullptr;
     StepperImpl* steppers_[cfg::kMaxSteppers] = {};
     GroupImpl* groups_[cfg::kMaxSteppers] = {};

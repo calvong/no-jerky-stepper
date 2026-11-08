@@ -47,7 +47,7 @@ public:
 
     /// Generate commands until the scan reaches `until_tick`, the stream is full, or the motion
     /// is finished. With `keep_alive`, a finished axis keeps emitting pauses (group members).
-    Result run(const Trajectory& traj, int64_t until_tick, StepStream& out, bool keep_alive);
+    Result run(const TrajView& traj, int64_t until_tick, StepStream& out, bool keep_alive);
 
     /// Move the time base of an idle generator forward (group alignment).
     void rebase(int64_t tick);
@@ -66,8 +66,8 @@ public:
     int64_t to_tick(double t) const;
 
 private:
-    void process_slice(const Trajectory& traj, int64_t s0, int64_t s1, StepStream& out);
-    double solve_crossing(const Trajectory& traj, double b, double ta, double tb) const;
+    void process_slice(const TrajView& traj, int64_t s0, int64_t s1, StepStream& out);
+    double solve_crossing(const TrajView& traj, double b, double ta, double tb) const;
     int64_t spacing(int d) const { return d != dir_ ? cfg_.dir_lead_ticks : cfg_.min_period_ticks; }
     void emit_step(int64_t t_req, int d, StepStream& out);
     void emit_uniform(int64_t to_tick, int64_t m, StepStream& out);

@@ -2,5 +2,6 @@
 #pragma once
 
 #include "nj/group.hpp"
+#include "nj/sensor.hpp"
 #include "nj/stepper.hpp"
 #include "nj/types.hpp"

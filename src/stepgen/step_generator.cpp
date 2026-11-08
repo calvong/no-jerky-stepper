@@ -29,7 +29,7 @@ void StepGenerator::rebase(int64_t tick)
     }
 }
 
-StepGenerator::Result StepGenerator::run(const Trajectory& traj, int64_t until_tick, StepStream& out,
+StepGenerator::Result StepGenerator::run(const TrajView& traj, int64_t until_tick, StepStream& out,
                                          bool keep_alive)
 {
     for (;;) {
@@ -77,7 +77,7 @@ StepGenerator::Result StepGenerator::run(const Trajectory& traj, int64_t until_t
     }
 }
 
-void StepGenerator::process_slice(const Trajectory& traj, int64_t s0, int64_t s1, StepStream& out)
+void StepGenerator::process_slice(const TrajView& traj, int64_t s0, int64_t s1, StepStream& out)
 {
     double tc = to_time(s0);
     const double t1 = to_time(s1);
@@ -112,7 +112,7 @@ void StepGenerator::process_slice(const Trajectory& traj, int64_t s0, int64_t s1
     }
 }
 
-double StepGenerator::solve_crossing(const Trajectory& traj, double b, double ta, double tb) const
+double StepGenerator::solve_crossing(const TrajView& traj, double b, double ta, double tb) const
 {
     double fa = traj.p(ta) - b;
     double fb = traj.p(tb) - b;

@@ -10,6 +10,7 @@
 | 3 Retarget & stops | commit-horizon splice with C2 continuity, smooth stop (quartic), immediate stop, best-effort limits from moving states |
 | 4 Waypoints | `followPath` / `appendWaypoints`, `Stop` / `Heuristic` / `Optimal` (C4) via policies, limit-scaled durations, frozen near-arrival waypoints, `waypoints` example |
 | 5 Groups | `nj::Group`, shared commit tick and durations, RMT sync start, keep-alive streaming, `multi_axis` example |
+| Closed-loop feedback | generic `PositionSensor` / `IncrementalSensor` / `CallbackSensor`; offset track summed into the step generator; slip = commanded − measured with a latency-compensated history; `Settle`, `Continuous`, `ContinuousAndSettle`; faults (slip, jump, timeout, settle failed) with smooth stop; group members with any mix of sensors (fault stops the group); offset absorbed into the counter when idle; `feedback` example (SoftPot, PCNT encoder templates) |
 | Cruise (point-to-point) | ramp + constant velocity + ramp for `moveTo` / `move` / `Group::moveTo`; `Distance`, `Percent` and `Auto` modes with `min_distance`; per-stepper / per-group setting plus per-call override |
 
 ## Next: hardware bring-up (do first)
@@ -24,6 +25,11 @@ ESP32-S3 with a logic analyser on STEP/DIR:
 3. Check `stats()`: `underruns == 0` and `stretched_ticks == 0` in normal use. Stress it
    with 4 channels at 100 kHz plus Wi-Fi load.
 4. `multi_axis`: rising edges of both channels align at the start (sync manager).
+5. `feedback`: with a SoftPot and with a quadrature encoder, block the carriage briefly (or
+   lower the motor current) to lose steps. The settle phase must bring `measuredPosition()`
+   back within tolerance, `position()` must equal the target afterwards, and a hard stall must
+   raise `SlipTooLarge` and stop smoothly. Tune `sensor_latency_ms` until a fast move without
+   losses causes no corrections.
 
 ## Stage 6: useful features
 
@@ -38,6 +44,32 @@ ESP32-S3 with a logic analyser on STEP/DIR:
     arrivals (`kFreezeTime`), the `kPathCapacity + 2 <= kSegmentPool` budget, and
     `appendWaypoints` after a cruising move.
   - Shared timing for group paths (`group_follow_path`), so coordinated paths stay in sync.
+- **Feedback: sensor drivers.** VL53L0X / VL53L1X (I2C, `FeedbackTask` context), SoftPot on
+  ADC continuous/DMA mode with averaging, PCNT quadrature, magnetic linear/rotary encoders
+  (AS5600, AS5047, ...), using the generic `nj/sensor.hpp` interface.
+- **Feedback for groups: re-plan option.** Groups support feedback with per-member
+  corrections (done). Optional later: a mode that re-plans the whole group on a large slip
+  so the members slow down together instead of one member catching up.
+- **Feedback: Kalman slip estimator.** A 1-D Kalman filter with the commanded trajectory as
+  its process model (`SlipEstimator` interface), for slow, noisy rangefinders.
+- **Rewritable step queue (low-latency corrections and retargets).** Today a plan change
+  starts behind the whole software queue (about `NJ_LOOKAHEAD_MS`). Only what the encoder
+  has copied into RMT memory is truly committed. Cut the queue just after that point and
+  regenerate from there: latency drops to a few ms while the full margin stays for normal
+  streaming. Needs:
+  - A generator snapshot (scan tick, position, direction, last emit) per queued command,
+    so the generator can be wound back to the cut point.
+  - A safe handover with the encoder ISR: claim the cut index atomically so the ISR never
+    reads a command that is being replaced, and fix up `pushed_ticks`.
+  - Group members cut at one common tick.
+  - Tests in the host simulation; `underruns` and `stretched_ticks` must stay 0 on hardware.
+  DMA is not an alternative: a DMA buffer is committed and adds latency (and only one S3
+  TX channel has DMA).
+- **Feedback: homing helper** for incremental sensors (index pulse / limit switch → reference).
+- **IMU (later, not for position).** Integrating an accelerometer twice drifts within
+  seconds, and the commanded trajectory is a better motion model than an IMU. An IMU is
+  useful for stall detection (commanded vs measured acceleration) and vibration/resonance
+  monitoring. Fusion only matters for compliant loads or machines on a moving base.
 - **Exact position feedback**: PCNT counting the STEP pin through the GPIO matrix, with DIR
   as the count direction. Fixes `position()` lead and immediate-stop accounting.
 - **Enable management**: auto-enable before motion, disable after an idle timeout, with
@@ -72,6 +104,7 @@ unchanged.
 ## Open design questions
 
 - Should the commit horizon shrink automatically for low-latency retargets at low speed
-  (shorter look-ahead when the step rate is low)?
+  (shorter look-ahead when the step rate is low)? The rewritable step queue (Stage 6) may
+  make this unnecessary.
 - Should `moveTo` with an explicit duration warn when the limits are exceeded (stats flag)?
 - `int32` public positions: enough for most machines; switch to `int64` if needed.

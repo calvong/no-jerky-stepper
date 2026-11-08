@@ -171,11 +171,28 @@ bool Group::isMoving() const
 {
     PlannerLock lk;
     for (int i = 0; i < impl_->n; ++i) {
-        if (PlannerTask::get().busy_locked(impl_->members[i])) {
+        StepperImpl* m = impl_->members[i];
+        if (PlannerTask::get().busy_locked(m) || (m->sensor && m->fb.settling())) {
             return true;
         }
     }
     return false;
+}
+
+esp_err_t Group::waitUntilSettled(TickType_t timeout) const
+{
+    const esp_err_t err = waitUntilIdle(timeout);
+    if (err != ESP_OK) {
+        return err;
+    }
+    PlannerLock lk;
+    for (int i = 0; i < impl_->n; ++i) {
+        const StepperImpl* m = impl_->members[i];
+        if (m->sensor && m->fb.status().state == FeedbackState::Fault) {
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
 }
 
 esp_err_t Group::waitUntilIdle(TickType_t timeout) const
